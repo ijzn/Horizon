@@ -16,7 +16,10 @@ from .models import Config, ContentItem
 from .storage.manager import StorageManager, safe_output_path
 from .services.email import EmailManager
 from .services.webhook import WebhookNotifier
-from .services.wechat import WeChatNotifier
+from .services.wechat_subscribers import (
+    SubscriberWeChatNotifier as WeChatNotifier,
+    WeChatPartialDeliveryError,
+)
 from .scrapers.base import BaseScraper
 from .scrapers.github import GitHubScraper
 from .scrapers.hackernews import HackerNewsScraper
@@ -420,7 +423,7 @@ class HorizonOrchestrator:
                     date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     error_message=str(e),
                 )
-            if self.wechat_notifier:
+            if self.wechat_notifier and not isinstance(e, WeChatPartialDeliveryError):
                 await self.wechat_notifier.send_failure(
                     date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     error_message=str(e),
