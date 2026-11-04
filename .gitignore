@@ -63,3 +63,13 @@ logs/*.log
 todo.txt
 .ruff_cache
 .pytest_cache
+
+# Private WeChat recipient state and local delivery artifacts
+data/wechat_subscribers/
+data/wechat-login*.png
+data/login-*.png
+data/wechat-delivery*.json
+data/chatgpt-auth/
+data/delivery-*.json
+data/ready.json
+data/*.lock
