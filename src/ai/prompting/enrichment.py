@@ -163,12 +163,17 @@ def item_context(
         else ""
     )
     comments = parts.comments[:2000] if include_content else ""
+    date_context = (
+        f"Discovered: {item.published_at.isoformat()} (publication date unknown)"
+        if item.metadata.get("published_at_unknown")
+        else f"Published: {item.published_at.isoformat()}"
+    )
     return f"""# Item
 
 Title: {item.title}
 URL: {item.url}
 Source: {item.source_type.value}
-Published: {item.published_at.isoformat()}
+{date_context}
 Author: {item.author or "Unknown"}
 Analysis summary: {analysis.summary if analysis else ""}
 Analysis reason: {analysis.reason if analysis else ""}
