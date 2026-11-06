@@ -64,6 +64,7 @@ def make_sources(**overrides):  # type: ignore[no-untyped-def]
         "ossinsight": SimpleNamespace(enabled=False),
         "gdelt": None,
         "google_news": None,
+        "web_search": None,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -78,6 +79,17 @@ class StubScraper:
         if self.error:
             raise self.error
         return FetchResult(items=self.result, successful=1)
+
+
+def test_public_web_discovery_participates_in_pipeline(monkeypatch) -> None:
+    orchestrator = make_orchestrator()
+    kept = make_item("public-web")
+    orchestrator.config = SimpleNamespace(
+        sources=make_sources(web_search=SimpleNamespace(enabled=True)), extractors={}
+    )
+    monkeypatch.setattr("src.orchestrator.WebSearchScraper", lambda config, client: StubScraper([kept]))
+    assert asyncio.run(orchestrator.fetch_all_sources(SINCE)) == [kept]
+    assert orchestrator.last_fetch_report.outcomes[0].source_name == "Public Web Search"
 
 
 def test_all_success_empty_has_normal_success_report(monkeypatch) -> None:
