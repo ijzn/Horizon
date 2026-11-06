@@ -46,9 +46,11 @@ async def main(stage):
     summary = report.read_text()
     if not cfg.wechat or not cfg.wechat.enabled:
         raise RuntimeError('WeChat delivery is disabled')
-    # Always consult recipient-level history: a friend added after today's
-    # delivery must still receive the existing briefing on the next run.
-    outcomes = await SubscriberStore(ROOT / 'data').broadcast(summary, cfg.wechat, lang='zh')
+    # Scheduled delivery is limited to the owner until friends are explicitly enabled.
+    # The manual CLI retains all-reader and selected-reader delivery.
+    outcomes = await SubscriberStore(ROOT / 'data').broadcast(
+        summary, cfg.wechat, subscriber_ids=['owner'], lang='zh'
+    )
     for result in outcomes:
         print(f'{result.name}: {result.status}')
     if not outcomes:
