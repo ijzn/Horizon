@@ -40,6 +40,7 @@ def test_existing_channel_ledger_does_not_skip_new_friend(monkeypatch, tmp_path,
             assert directory == tmp_path / 'data'
 
         async def broadcast(self, summary, config, **kw):
+            assert kw['subscriber_ids'] == ['owner']
             calls.append(summary)
             return [SubscriberDelivery('owner', '自己', 'duplicate'), SubscriberDelivery('a' * 12, '新朋友', 'sent', True, 1)]
 
