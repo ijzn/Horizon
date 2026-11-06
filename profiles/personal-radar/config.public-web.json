@@ -1,0 +1,181 @@
+{
+  "ai": {
+    "provider": "openai-chatgpt",
+    "model": "PENDING_AUTH",
+    "languages": [
+      "zh"
+    ],
+    "analysis_concurrency": 1,
+    "enrichment_concurrency": 1
+  },
+  "processing": {
+    "profiles_dir": "profiles",
+    "default_profile": "personal-radar",
+    "profile_settings": {
+      "personal-radar": {
+        "threshold": 7,
+        "topic_dedup": true
+      }
+    }
+  },
+  "display": {
+    "icon_style": "emoji"
+  },
+  "sources": {
+    "rss": [
+      {
+        "name": "Simon Willison",
+        "url": "https://simonwillison.net/atom/everything/",
+        "category": "ai-tools",
+        "profile": "personal-radar"
+      },
+      {
+        "name": "OpenAI News",
+        "url": "https://openai.com/news/rss.xml",
+        "category": "ai-tools",
+        "profile": "personal-radar"
+      },
+      {
+        "name": "GitHub Blog",
+        "url": "https://github.blog/feed/",
+        "category": "open-source",
+        "profile": "personal-radar"
+      },
+      {
+        "name": "Hugging Face",
+        "url": "https://huggingface.co/blog/feed.xml",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "少数派",
+        "url": "https://sspai.com/feed",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "阮一峰",
+        "url": "https://www.ruanyifeng.com/blog/atom.xml",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "V2EX技术",
+        "url": "https://www.v2ex.com/feed/tab/tech.xml",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "掘金",
+        "url": "https://juejin.cn/rss",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "GitHub Changelog",
+        "url": "https://github.blog/changelog/feed/",
+        "category": "practice",
+        "profile": "personal-radar",
+        "content_extractor": "trafilatura"
+      },
+      {
+        "name": "anthropics/claude-code releases",
+        "url": "https://github.com/anthropics/claude-code/releases.atom",
+        "category": "practice",
+        "profile": "personal-radar"
+      },
+      {
+        "name": "openai/codex releases",
+        "url": "https://github.com/openai/codex/releases.atom",
+        "category": "practice",
+        "profile": "personal-radar"
+      }
+    ],
+    "hackernews": {
+      "enabled": true,
+      "fetch_top_stories": 20,
+      "min_score": 100,
+      "category": "discovery",
+      "profile": "personal-radar"
+    },
+    "web_search": {
+      "enabled": true,
+      "queries": [
+        "AI coding agent practical tutorial official documentation",
+        "AI 编程 实战 教程 工作流",
+        "indie developer paying customers case study pricing",
+        "独立开发 产品 付费用户 获客 案例",
+        "site:github.com AI agent workflow tutorial",
+        "site:reddit.com/r/ClaudeAI workflow experience",
+        "site:x.com AI coding workflow tutorial",
+        "site:mp.weixin.qq.com AI 编程 实践",
+        "site:youtube.com AI coding tutorial",
+        "site:zhihu.com AI 编程 实践"
+      ],
+      "max_results_per_query": 5,
+      "max_total_results": 40,
+      "region": "wt-wt",
+      "backend": "bing",
+      "fetch_body": true,
+      "max_body_chars": 18000,
+      "category": "practice",
+      "profile": "personal-radar"
+    },
+    "google_news": {
+      "enabled": true,
+      "query": "\"AI agent\" OR \"Claude Code\" OR \"Codex\" OR \"AI 编程\"",
+      "language": "zh-CN",
+      "country": "CN",
+      "ceid": "CN:zh-Hans",
+      "max_results": 20,
+      "category": "discovery",
+      "profile": "personal-radar"
+    },
+    "github": [],
+    "reddit": {
+      "enabled": false,
+      "subreddits": [],
+      "users": []
+    },
+    "telegram": {
+      "enabled": false,
+      "channels": []
+    }
+  },
+  "collection": {
+    "time_window_hours": 24
+  },
+  "digest": {
+    "max_items": 2,
+    "profile_order": [
+      "personal-radar"
+    ],
+    "category_groups": {
+      "ai": {
+        "limit": 4,
+        "categories": [
+          "ai-tools"
+        ]
+      },
+      "oss": {
+        "limit": 2,
+        "categories": [
+          "open-source"
+        ]
+      }
+    },
+    "default_group": "other",
+    "default_group_limit": 3
+  },
+  "webhook": {
+    "enabled": false
+  },
+  "wechat": {
+    "enabled": true
+  }
+}
