@@ -16,7 +16,10 @@ from .models import Config, ContentItem
 from .storage.manager import StorageManager, safe_output_path
 from .services.email import EmailManager
 from .services.webhook import WebhookNotifier
-from .services.wechat import WeChatNotifier
+from .services.wechat_subscribers import (
+    SubscriberWeChatNotifier as WeChatNotifier,
+    WeChatPartialDeliveryError,
+)
 from .scrapers.base import BaseScraper
 from .scrapers.github import GitHubScraper
 from .scrapers.hackernews import HackerNewsScraper
@@ -29,6 +32,7 @@ from .scrapers.openbb import OpenBBScraper
 from .scrapers.ossinsight import OSSInsightScraper
 from .scrapers.gdelt import GDELTScraper
 from .scrapers.google_news import GoogleNewsScraper
+from .scrapers.web_search import WebSearchScraper
 from .ai.client import AIClient, create_ai_client
 from .ai.errors import AIProviderUnavailableError
 from .ai.analyzer import ContentAnalyzer
@@ -420,7 +424,7 @@ class HorizonOrchestrator:
                     date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     error_message=str(e),
                 )
-            if self.wechat_notifier:
+            if self.wechat_notifier and not isinstance(e, WeChatPartialDeliveryError):
                 await self.wechat_notifier.send_failure(
                     date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     error_message=str(e),
@@ -511,6 +515,10 @@ class HorizonOrchestrator:
                 tasks.append(self._fetch_with_progress("Google News", gn_scraper, since))
 
             # Fetch all concurrently
+            if self.config.sources.web_search and self.config.sources.web_search.enabled:
+                web_scraper = WebSearchScraper(self.config.sources.web_search, client)
+                tasks.append(self._fetch_with_progress("Public Web Search", web_scraper, since))
+
             outcomes = await asyncio.gather(*tasks)
             self.last_fetch_report = FetchReport(outcomes=list(outcomes))
 

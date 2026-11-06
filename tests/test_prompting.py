@@ -22,6 +22,19 @@ PROFILES = ProfileRegistry.load(
 )
 
 
+def test_web_discovery_date_is_not_presented_as_publication():
+    item = ContentItem(
+        id="web_search:page:test", source_type=SourceType.WEB_SEARCH,
+        title="Useful old tutorial", url="https://example.com/tutorial",
+        published_at=datetime.now(timezone.utc),
+        metadata={"published_at_unknown": True},
+    )
+    context = item_context(item, PROFILES.get("tech-news"), include_content=True)
+    assert "Discovered:" in context
+    assert "publication date unknown" in context
+    assert "Published:" not in context
+
+
 def test_tool_planning_excludes_profile_writing_policy():
     profile = PROFILES.get("tech-news")
     blocks = profile.definition.enrichment.blocks

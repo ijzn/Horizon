@@ -20,6 +20,7 @@ class SourceType(str, Enum):
     OSSINSIGHT = "ossinsight"
     GDELT = "gdelt"
     GOOGLE_NEWS = "google_news"
+    WEB_SEARCH = "web_search"
 
 
 class SourceDefinition(NamedTuple):
@@ -41,6 +42,7 @@ SOURCE_REGISTRY = {
     SourceType.OSSINSIGHT.value: SourceDefinition("ossinsight"),
     SourceType.GDELT.value: SourceDefinition("gdelt"),
     SourceType.GOOGLE_NEWS.value: SourceDefinition("google_news"),
+    SourceType.WEB_SEARCH.value: SourceDefinition("web_search"),
 }
 
 ProfileRoute = Optional[Union[str, List[str]]]
@@ -485,6 +487,28 @@ class GoogleNewsConfig(BaseModel):
     profile: ProfileRoute = None
 
 
+class WebSearchConfig(BaseModel):
+    """Public-web discovery; discovery time is not an article publication date."""
+
+    enabled: bool = False
+    queries: List[str] = Field(default_factory=list, max_length=20)
+    max_results_per_query: int = Field(default=8, ge=1, le=20)
+    max_total_results: int = Field(default=60, ge=1, le=120)
+    region: str = "wt-wt"
+    backend: Literal["bing", "brave", "duckduckgo", "auto"] = "bing"
+    fetch_body: bool = True
+    max_body_chars: int = Field(default=18000, ge=500, le=40000)
+    category: Optional[str] = None
+    profile: ProfileRoute = None
+
+    @field_validator("queries")
+    @classmethod
+    def nonempty_queries(cls, values: List[str]) -> List[str]:
+        if any(not value.strip() or len(value) > 400 for value in values):
+            raise ValueError("web_search queries must contain 1 to 400 characters")
+        return list(dict.fromkeys(value.strip() for value in values))
+
+
 class SourcesConfig(BaseModel):
     """All sources configuration."""
 
@@ -498,6 +522,7 @@ class SourcesConfig(BaseModel):
     ossinsight: OSSInsightConfig = Field(default_factory=OSSInsightConfig)
     gdelt: Optional[GDELTConfig] = None
     google_news: Optional[GoogleNewsConfig] = None
+    web_search: Optional[WebSearchConfig] = None
 
 
 class WebhookConfig(BaseModel):
