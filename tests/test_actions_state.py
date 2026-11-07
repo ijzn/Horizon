@@ -182,3 +182,74 @@ def test_cli_roundtrip_is_silent(roots, capsys):
     assert state.main(["save", "--root", str(source), "--output", str(output)]) == 0
     assert state.main(["restore", "--root", str(destination), "--input", str(output)]) == 0
     assert capsys.readouterr() == ("", "")
+
+
+def test_archive_pack_retains_90_days_and_dedicated_latest_files(roots, monkeypatch):
+    source, destination, output, key = roots
+    monkeypatch.setattr(state, "_today", lambda: "2026-11-07")
+    today = date(2026, 11, 7)
+    retained = {f"data/public-briefings/{(today - timedelta(days=age)).isoformat()}.html" for age in (0, 1, 89)}
+    retained |= {"data/public-briefings/2026-11-07-abcdef012345.html", "data/public-briefings/2026-11-07-012345abcdef.html"}
+    retained |= {"data/public-briefings/index.html", "data/wechat-preview.json"}
+    excluded = {f"data/public-briefings/{(today - timedelta(days=90)).isoformat()}.html", "data/public-briefings/2026-11-08.html", "data/public-briefings/2026-02-30.html", "data/public-briefings/2026-1-01.html", "data/public-briefings/secret.json", "data/public-briefings/nested/2026-11-07.html"}
+    for name in retained | excluded:
+        write(source, name, name.encode())
+    assert state.pack(source, output) == len(retained)
+    assert set(json.loads(Fernet(key).decrypt(output.read_bytes()))["files"]) == retained
+    assert state.restore(destination, output) == len(retained)
+    for name in retained:
+        assert (destination / name).read_bytes() == name.encode()
+
+
+@pytest.mark.parametrize("name", [
+    "data/public-briefings/2026-02-30.html",
+    "data/public-briefings/2026-13-01.html",
+    "data/public-briefings/2026-1-01.html",
+    "data/public-briefings/2026-11-08.html",
+    "data/public-briefings/nested/2026-11-07.html",
+    "data/public-briefings/2026-11-07.htm",
+    "data/public-briefings/../index.html",
+    "data/public-briefings/2026-11-07-ABCDEF012345.html",
+    "data/public-briefings/2026-11-07-abcdef.html",
+    "data/public-briefings/2026-11-07-abcdef0123456.html",
+    "data/public-briefings/2026-11-08-abcdef012345.html",
+])
+def test_restore_rejects_invalid_or_future_archive_before_writes(roots, name):
+    _, destination, output, key = roots
+    bundle(output, key, {"data/seen.json": b"valid", name: b"invalid"}, day="2026-11-07")
+    with pytest.raises(ValueError):
+        state.restore(destination, output)
+    assert not list(destination.iterdir())
+
+
+def test_cross_day_archive_survives_while_old_report_is_skipped(roots, monkeypatch):
+    _, destination, output, key = roots
+    monkeypatch.setattr(state, "_today", lambda: "2026-11-08")
+    report = "data/summaries/horizon-2026-11-07-zh.md"
+    archive = "data/public-briefings/2026-11-07-abcdef012345.html"
+    bundle(output, key, {report: b"old report", archive: b"permanent link", "data/wechat-preview.json": b"preview", "data/public-briefings/index.html": b"latest"}, day="2026-11-07")
+    assert state.restore(destination, output) == 3
+    assert (destination / archive).read_bytes() == b"permanent link"
+    assert not (destination / report).exists()
+
+
+def test_restore_ages_archive_out_relative_to_current_day(roots, monkeypatch):
+    _, destination, output, key = roots
+    monkeypatch.setattr(state, "_today", lambda: "2026-11-08")
+    archive = "data/public-briefings/2026-08-10.html"
+    bundle(output, key, {archive: b"was 89 days old", "data/seen.json": b"ledger"}, day="2026-11-07")
+    assert state.restore(destination, output) == 1
+    assert not (destination / archive).exists()
+
+
+def test_archive_symlink_is_rejected(roots, tmp_path, monkeypatch):
+    source, _, output, _ = roots
+    monkeypatch.setattr(state, "_today", lambda: "2026-11-07")
+    outside = tmp_path / "outside.html"
+    outside.write_bytes(b"do not read")
+    path = source / "data/public-briefings/2026-11-07.html"
+    path.parent.mkdir(parents=True)
+    path.symlink_to(outside)
+    with pytest.raises(ValueError):
+        state.pack(source, output)
+    assert not output.exists()
