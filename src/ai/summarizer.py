@@ -456,6 +456,8 @@ class DailySummarizer:
         else:
             source_parts.append(_escape_markdown(item.author or "unknown"))
         if item.published_at:
+            if meta.get("published_at_unknown"):
+                source_parts.append("发现于（发表日期未知）" if language == "zh" else "Discovered (publication date unknown)")
             if language == "zh":
                 source_parts.append(
                     f"{item.published_at.month}月{item.published_at.day}日 "
