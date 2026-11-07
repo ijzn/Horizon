@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,6 +22,8 @@ def daily(monkeypatch, tmp_path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, 'ROOT', tmp_path)
+    monkeypatch.setattr(module, 'load_preview', lambda *args: {'message':'# 同一份日报'})
+    monkeypatch.setattr(module, 'verify_published_detail', AsyncMock())
     config = SimpleNamespace(wechat=WeChatConfig(enabled=True, languages=['zh']))
     monkeypatch.setattr(module, 'StorageManager', lambda: SimpleNamespace(load_config=lambda: config))
     today = datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat()
@@ -47,6 +50,16 @@ def test_existing_channel_ledger_does_not_skip_new_friend(monkeypatch, tmp_path,
     monkeypatch.setattr(module, 'SubscriberStore', Store)
     asyncio.run(module.main('deliver'))
     assert calls == ['# 同一份日报']
+
+
+def test_unpublished_detail_prevents_wechat_send(monkeypatch,daily):
+    module,_ = daily
+    monkeypatch.setattr(module,'verify_published_detail',AsyncMock(side_effect=RuntimeError('not public')))
+    store=AsyncMock()
+    monkeypatch.setattr(module,'SubscriberStore',store)
+    with pytest.raises(RuntimeError,match='not public'):
+        asyncio.run(module.main('deliver'))
+    store.assert_not_called()
 
 
 def test_failed_recipient_is_reported_after_others_succeed(monkeypatch, daily):
