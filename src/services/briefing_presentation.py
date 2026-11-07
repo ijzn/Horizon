@@ -177,6 +177,18 @@ def render_detail_html(markdown: str, date: str) -> str:
     unescaped or normalized; only the HTML serializer escapes its text safely.
     """
     day = _date(date)
+    empty_result = "没有达到重要性阈值" in markdown[:600]
+    if empty_result:
+        markdown = (
+            "## 本期没有合格的工作实践\n\n"
+            "本期没有达到筛选标准的工作实践，不凑数。\n\n"
+            "本期未选：前端、产品、运营、AI。"
+        )
+    subtitle = "本期筛选结果" if empty_result else "完整分析与实践步骤"
+    reading_note = (
+        "本期没有入选内容，保留筛选结果供查看。" if empty_result
+        else "操作前请核对正文中的前置条件、验证方式与证据边界。"
+    )
     converter = markdown_library.Markdown(extensions=["fenced_code", "tables", "sane_lists"])
     converter.preprocessors.deregister("html_block")
     converter.inlinePatterns.deregister("html")
@@ -188,7 +200,7 @@ def render_detail_html(markdown: str, date: str) -> str:
     script_hash = base64.b64encode(hashlib.sha256(_COPY_SCRIPT.encode()).digest()).decode()
     policy = f"default-src 'none'; script-src 'sha256-{script_hash}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
     return f'''<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="{html.escape(policy, quote=True)}"><title>{day} · Horizon 日报详情</title><style>{_STYLE}</style></head><body><main><header><h1>Horizon 日报详情</h1><p>{day} · 完整分析与实践步骤</p><p>操作前请核对正文中的前置条件、验证方式与证据边界。</p></header><article>{content}</article></main><script>{_COPY_SCRIPT}</script></body></html>'''
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="{html.escape(policy, quote=True)}"><title>{day} · Horizon 日报详情</title><style>{_STYLE}</style></head><body><main><header><h1>Horizon 日报详情</h1><p>{day} · {subtitle}</p><p>{reading_note}</p></header><article>{content}</article></main><script>{_COPY_SCRIPT}</script></body></html>'''
 
 
 def _plain(value: object, limit: int | None = None) -> str:
@@ -215,7 +227,11 @@ def render_wechat_teaser(items: Sequence[BriefingItem | Mapping[str, object]], d
     day, url = _date(date), _http_url(url)
     if len(url) > 400:
         raise ValueError("Detail URL is too long for a compact teaser")
-    title = f"Horizon 日报｜{day}\n工作里怎么用 AI？先看本期精选，步骤和条件见详情。"
+    intro = (
+        "工作里怎么用 AI？先看本期精选，步骤和条件见详情。" if items
+        else "本期没有达到筛选标准的工作实践，不凑数。"
+    )
+    title = f"Horizon 日报｜{day}\n{intro}"
     rendered = []
 
     def get(item, key):
