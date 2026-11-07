@@ -31,18 +31,28 @@ class WebSearchTool:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("web_search requires a non-empty query")
         try:
-            raw = await asyncio.to_thread(DDGS().text, query.strip(), max_results=3)
+            from datetime import datetime, timezone
+            import httpx
+            from ..models import WebSearchConfig
+            from ..scrapers.web_search import WebSearchScraper
+            config = WebSearchConfig(
+                enabled=True, queries=[query.strip()], max_results_per_query=3,
+                max_total_results=3, max_body_chars=8000, time_filter=None,
+            )
+            async with httpx.AsyncClient(timeout=25) as client:
+                fetched = await WebSearchScraper(config, client).fetch(datetime.now(timezone.utc))
+            if fetched.failures:
+                logger.warning("web_search returned partial or failed results")
         except Exception as exc:
             logger.warning("web_search failed for %r: %s", query, exc)
             return []
         return [
             {
-                "title": str(result.get("title", "")),
-                "url": str(result.get("href", "")),
-                "text": str(result.get("body", "")),
+                "title": result.title,
+                "url": str(result.url),
+                "text": result.content or "",
             }
-            for result in (raw or [])
-            if result.get("href")
+            for result in fetched.items
         ]
 
 
