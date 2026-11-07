@@ -17,6 +17,8 @@ on:
 permissions:
   contents: read
   actions: read
+  pages: write
+  id-token: write
 concurrency:
   group: personal-horizon-wechat
   cancel-in-progress: false
@@ -25,6 +27,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 110
+    environment:
+      name: github-pages
+      url: https://ijzn.github.io/Horizon/
     env:
       HORIZON_CHATGPT_AUTH_DIR: ${{ github.workspace }}/data/chatgpt-auth
       HORIZON_MODEL: gpt-6.1-sol
@@ -48,11 +53,23 @@ jobs:
           uv run python scripts/actions_restore.py
           uv run python scripts/actions_state.py restore --root . --input /tmp/horizon-state.enc
           echo "restored=true" >> "$GITHUB_OUTPUT"
-      - name: Generate or deliver only to owner
+      - name: Generate report and prepare short categorized guide
+        id: prepare
         timeout-minutes: 90
         env:
           STAGE: ${{ inputs.stage || (github.event.schedule == '7 0 * * *' && 'generate' || 'run') }}
-        run: uv run python scripts/actions_run.py "$STAGE"
+        run: uv run python scripts/actions_run.py "$STAGE" --prepare-only
+      - name: Check GitHub Pages configuration
+        uses: actions/configure-pages@v5
+      - name: Upload public report HTML only
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: data/pages-site
+      - name: Publish mobile detail pages
+        uses: actions/deploy-pages@v4
+      - name: Deliver short guide after checking the published page
+        if: inputs.stage != 'generate' && github.event.schedule != '7 0 * * *'
+        run: uv run python scripts/actions_run.py deliver --send-only
       - name: Encrypt latest state even after pipeline failure
         id: pack
         if: always() && steps.restore.outputs.restored == 'true'

@@ -1,5 +1,6 @@
 """Run the personal daily pipeline in an ephemeral Actions worker."""
 import argparse
+import asyncio
 from datetime import datetime
 import hashlib
 import json
@@ -9,12 +10,19 @@ import subprocess
 import sys
 from zoneinfo import ZoneInfo
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.models import Config
+from src.services.briefing_publish import prepare_presentation
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('stage', choices=['generate', 'deliver', 'run'])
+    phases = parser.add_mutually_exclusive_group()
+    phases.add_argument('--prepare-only', action='store_true')
+    phases.add_argument('--send-only', action='store_true')
     args = parser.parse_args()
     os.chdir(ROOT)
     os.environ['HORIZON_CHATGPT_AUTH_DIR'] = str(ROOT / 'data/chatgpt-auth')
@@ -35,7 +43,7 @@ def main():
         except (OSError, ValueError):
             return False
 
-    if args.stage in {'generate', 'run'} and not current():
+    if not args.send_only and args.stage in {'generate', 'run'} and (args.stage == 'generate' or not current()):
         subprocess.run([sys.executable, 'daily-local.py', 'generate'], check=True)
         marker = json.loads(ready.read_text())
         if marker.get('date') != today or not report.read_text().strip():
@@ -43,6 +51,12 @@ def main():
         marker['sha256'] = hashlib.sha256(report.read_bytes()).hexdigest()
         ready.write_text(json.dumps(marker))
         ready.chmod(0o600)
+    if not args.send_only:
+        if not current():
+            raise RuntimeError('No verified report for today; run generate first')
+        asyncio.run(prepare_presentation(ROOT, today, report.read_text(), Config.model_validate(config).ai))
+    if args.prepare_only:
+        return
     if args.stage in {'deliver', 'run'}:
         if not current():
             raise RuntimeError('No verified report for today; run generate first')

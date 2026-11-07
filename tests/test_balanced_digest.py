@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -254,7 +255,10 @@ def test_rejects_settings_for_unknown_profile() -> None:
         HorizonOrchestrator(config, SimpleNamespace())
 
 
-def test_appends_profiles_missing_from_configured_order() -> None:
+def test_appends_profiles_missing_from_configured_order(tmp_path) -> None:
+    profile_dir = tmp_path / 'profiles'
+    for name in ('tech-news', 'tech-blog', 'ai-creator', 'finance-news'):
+        shutil.copytree(Path(__file__).parents[1] / 'profiles' / name, profile_dir / name)
     config = Config(
         ai=AIConfig(
             provider="openai",
@@ -262,6 +266,7 @@ def test_appends_profiles_missing_from_configured_order() -> None:
             api_key_env="TEST_API_KEY",
         ),
         sources=SourcesConfig(),
+        processing=ProcessingConfig(profiles_dir=str(profile_dir)),
         digest=DigestConfig(profile_order=["tech-news", "tech-blog"]),
     )
 

@@ -19,6 +19,18 @@
 
 ## 初次验收
 
+## 工作实践分类与详情
+
+当前按前端、产品、运营、AI四类筛选“工作如何使用AI”，每类最多一条，无合格内容不凑数。微信只发具体用途、一个可开始的动作和简短证据说明；完整报告、操作条件、代码、来源放到手机版详情页。
+
+首次在仓库 Settings → Pages 将 Source 设为 GitHub Actions。日报工作流仅上传单独生成的 `data/pages-site/` HTML 白名单；任何模型/微信凭据、状态JSON或日志均不进入公开站点。页面按日期和报告hash区分，同一日期重新生成不会覆盖已经分享的链接，保留最近90天。
+
+工作流先生成完整报告和绑定其hash的导读，再发布详情，最后核对公开URL的完整内容hash一致才推微信。页面/导读失败会停止推送，仍加密保存最新授权。8:07只准备并发布，9:00发送；手动 `generate` 重新生成但不发送，`run`复用当日成功报告后发送，`deliver`只发送。之后bootstrap始终false。
+
+旧Deploy Docs仅向gh-pages分支写项目文档；Pages source为Actions后，日报由Personal Horizon WeChat的官方deploy-pages动作发布。
+
+## 初次验收步骤
+
 1. 创建两个Secrets；密钥与状态不发聊天。
 2. 在main手动run + bootstrap=true，验证真实Linux采集、模型生成、owner微信投递以及加密artifact保存。
 3. 新run以bootstrap=false恢复刚保存的状态，使用deliver验证重试不重复发送。
