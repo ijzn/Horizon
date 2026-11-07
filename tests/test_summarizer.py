@@ -469,3 +469,56 @@ def test_generate_summary_preserves_normal_http_links():
     assert "[Important Item 1](https://example.com/items/1)" in result
     assert "[Discussion](https://example.com/discuss?id=1#comments)" in result
     assert 'href="https://docs.example.com/path?q=one&amp;lang=en"' in result
+
+
+def test_artifact_code_pipeline_roundtrip_preserves_shell_bytes_and_wechat():
+    from src.services.wechat import format_markdown_for_wechat
+    from src.ai.summarizer import _render_body_markdown
+
+    command = "git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | awk '$1==\"blob\" {print $3, $4}' | sort -nr | head -20"
+    item = _make_item(1)
+    item.processing.artifacts["zh"].blocks = [
+        ContentBlock(id="summary", title="摘要", content="运行 `printf '中文value' | cat`。", primary=True),
+        ContentBlock(id="practice", title="实践", content=f"```sh\n{command}\n```"),
+    ]
+    output = _run_async(DailySummarizer().generate_summary([item], "2026-11-07", 1, language="zh"))
+    assert f"```sh\n{command}\n```" in output
+    assert "`printf '中文value' | cat`" in output
+    assert "**「实践」**\n\n```sh" in output
+    wechat = format_markdown_for_wechat(output)
+    assert command in wechat and "中文value" in wechat
+    assert _render_body_markdown(f"```sh\n{command}\n```", "zh") == f"```sh\n{command}\n```"
+
+
+def test_code_decodes_html_entities_once_without_escaping_syntax():
+    from src.ai.summarizer import _render_body_markdown
+    command = "awk &#x27;$1==&quot;blob&quot; {print $3}&#x27; | cat"
+    result = _render_body_markdown(f"```bash\n{command}\n```", "zh")
+    assert result == "```bash\nawk '$1==\"blob\" {print $3}' | cat\n```"
+    assert _render_body_markdown("`printf '&amp;#x27;'`", "zh") == "`printf '&#x27;'`"
+
+
+def test_code_content_cannot_escape_rebuilt_fence_or_inline_delimiter():
+    from src.ai.summarizer import _render_body_markdown
+    import markdown
+
+    body = "```sh\n&#96;&#96;&#96;\n<script>alert(1)</script>\n```\nOutside <img src=x onerror=alert(1)>"
+    result = _render_body_markdown(body, "en")
+    assert result.startswith("````sh\n```\n<script>")
+    rendered = markdown.markdown(result, extensions=["fenced_code"])
+    assert "<script>" not in rendered and "<img " not in rendered
+    inline = _render_body_markdown("`&#96;<img src=x>&#96;`", "en")
+    assert "<img " not in markdown.markdown(inline)
+
+
+def test_plain_artifact_text_remains_literal_and_chinese_spacing_skips_code():
+    from src.ai.summarizer import _render_body_markdown
+    result = _render_body_markdown('中文text `中文text` [bad](javascript:alert(1)) <script>x</script>', "zh")
+    assert "中文 text" in result and "`中文text`" in result
+    assert "](javascript:" not in result and "<script>" not in result
+
+
+def test_unclosed_fence_is_escaped_and_tilde_fence_preserves_contents():
+    from src.ai.summarizer import _render_body_markdown
+    assert "<script>" not in _render_body_markdown("```\n<script>bad</script>", "en")
+    assert _render_body_markdown("~~~sh\nprintf '中文value' | cat\n~~~", "zh") == "```sh\nprintf '中文value' | cat\n```"

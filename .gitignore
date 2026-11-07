@@ -46,6 +46,14 @@ data/mcp-secrets.json
 data/mcp-runs/
 data/x_cookies_*.json
 data/wechat_session.json
+data/wechat_subscribers/
+data/wechat-login*.png
+data/login-*.png
+data/wechat-delivery*.json
+data/chatgpt-auth/
+data/delivery-*.json
+data/ready.json
+data/*.lock
 
 docs/_posts/*.md
 
@@ -64,12 +72,6 @@ todo.txt
 .ruff_cache
 .pytest_cache
 
-# Private WeChat recipient state and local delivery artifacts
-data/wechat_subscribers/
-data/wechat-login*.png
-data/login-*.png
-data/wechat-delivery*.json
-data/chatgpt-auth/
-data/delivery-*.json
-data/ready.json
-data/*.lock
+data/actions-private/
+data/profile-backups/
+data/config.before-model.json

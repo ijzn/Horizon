@@ -24,6 +24,63 @@ def _escape_markdown(value: object) -> str:
     return _MARKDOWN_BLOCK_START.sub(r"\1\\\2", escaped)
 
 
+_FENCE_START = re.compile(r"(?m)^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n")
+_INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)([^\n]*?)(?<!`)\1(?!`)")
+
+
+def _render_body_markdown(value: object, language: str) -> str:
+    """Keep explicitly delimited code literal; escape every other text span.
+
+    Decode entities once only inside code. Rebuild delimiters after decoding so
+    an encoded backtick/fence cannot break out into active HTML or Markdown.
+    Chinese spacing applies to prose only, never commands or string literals.
+    """
+    text = str(value)
+
+    def prose(fragment: str) -> str:
+        escaped = _escape_markdown(fragment)
+        return _pangu(escaped) if language == "zh" else escaped
+
+    def inline(fragment: str) -> str:
+        pieces, cursor = [], 0
+        for match in _INLINE_CODE.finditer(fragment):
+            pieces.append(prose(fragment[cursor:match.start()]))
+            code = html.unescape(match.group(2))
+            longest = max((len(run) for run in re.findall(r"`+", code)), default=0)
+            delimiter = "`" * max(len(match.group(1)), longest + 1)
+            padding = " " if code.startswith("`") or code.endswith("`") else ""
+            pieces.append(delimiter + padding + code + padding + delimiter)
+            cursor = match.end()
+        pieces.append(prose(fragment[cursor:]))
+        return "".join(pieces)
+
+    pieces, cursor = [], 0
+    for opener in _FENCE_START.finditer(text):
+        if opener.start() < cursor:
+            continue
+        fence, info = opener.groups()
+        # CommonMark disallows backticks in a backtick fence's info string.
+        if fence[0] == "`" and "`" in info:
+            continue
+        closing = re.compile(
+            rf"(?m)^ {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*(?:\r?\n|$)"
+        ).search(text, opener.end())
+        if closing is None:
+            continue
+        pieces.append(inline(text[cursor:opener.start()]))
+        code = html.unescape(text[opener.end():closing.start()])
+        longest = max((len(run) for run in re.findall(r"`+", code)), default=0)
+        delimiter = "`" * max(3, longest + 1)
+        info = info.strip()
+        safe_info = info if re.fullmatch(r"[A-Za-z0-9_+.-]{0,32}", info) else ""
+        pieces.append(delimiter + safe_info + "\n" + code + delimiter)
+        if closing.group(0).endswith("\n"):
+            pieces.append("\n")
+        cursor = closing.end()
+    pieces.append(inline(text[cursor:]))
+    return "".join(pieces)
+
+
 def _safe_url(value: object) -> Optional[str]:
     """Return an HTML/Markdown-safe HTTP(S) URL, or None for unsafe URLs."""
     raw = str(value).strip()
@@ -382,13 +439,12 @@ class DailySummarizer:
 
         summary = _escape_markdown(summary)
         primary_content = (
-            _escape_markdown(primary_block.content) if primary_block else ""
+            _render_body_markdown(primary_block.content, language) if primary_block else ""
         )
 
         if language == "zh":
             title = _pangu(title)
             summary = _pangu(summary)
-            primary_content = _pangu(primary_content)
 
         # Source line with parts joined by " · ", link appended at end
         source_type = item.source_type.value
@@ -400,6 +456,8 @@ class DailySummarizer:
         else:
             source_parts.append(_escape_markdown(item.author or "unknown"))
         if item.published_at:
+            if meta.get("published_at_unknown"):
+                source_parts.append("发现于（发表日期未知）" if language == "zh" else "Discovered (publication date unknown)")
             if language == "zh":
                 source_parts.append(
                     f"{item.published_at.month}月{item.published_at.day}日 "
@@ -433,11 +491,11 @@ class DailySummarizer:
                 if block.primary:
                     continue
                 block_title = _escape_markdown(block.title)
-                block_content = _escape_markdown(block.content)
+                block_content = _render_body_markdown(block.content, language)
                 if language == "zh":
                     block_title = _pangu(block_title)
-                    block_content = _pangu(block_content)
-                lines.extend(["", f"**「{block_title}」** {block_content}"])
+                separator = "\n\n" if block_content.startswith("```") else " "
+                lines.extend(["", f"**「{block_title}」**{separator}{block_content}"])
 
         sources = artifact.sources if artifact else []
         if sources:
