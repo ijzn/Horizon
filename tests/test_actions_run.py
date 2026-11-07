@@ -85,3 +85,11 @@ def test_failed_preview_prevents_delivery(monkeypatch,tmp_path):
     monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append(args[-1]))
     with pytest.raises(ValueError,match='invalid guide'):m.main()
     assert calls==[]
+
+
+def test_format_reuses_verified_report_without_regeneration_or_send(monkeypatch,tmp_path):
+    setup(monkeypatch,tmp_path,'format',True);calls=[]
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append(args[-1]))
+    m.main()
+    assert calls==[]
+    m.prepare_presentation.assert_awaited_once()
