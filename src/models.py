@@ -496,6 +496,7 @@ class WebSearchConfig(BaseModel):
     max_total_results: int = Field(default=60, ge=1, le=120)
     region: str = "wt-wt"
     backend: Literal["bing", "brave", "duckduckgo", "auto"] = "bing"
+    time_filter: Optional[Literal["d", "w", "m", "y"]] = "w"
     fetch_body: bool = True
     max_body_chars: int = Field(default=18000, ge=500, le=40000)
     category: Optional[str] = None
