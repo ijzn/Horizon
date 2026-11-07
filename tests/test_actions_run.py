@@ -4,6 +4,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 import pytest
 
 spec=importlib.util.spec_from_file_location('actions_run',Path(__file__).parents[1]/'scripts/actions_run.py')
@@ -11,6 +13,8 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 
 def setup(monkeypatch,tmp_path,stage,valid=False):
+    monkeypatch.setattr(m,'prepare_presentation',AsyncMock())
+    monkeypatch.setattr(m,'Config',SimpleNamespace(model_validate=lambda _:SimpleNamespace(ai=object())))
     monkeypatch.setattr(m,'ROOT',tmp_path);monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(m.sys,'argv',['actions_run.py',stage])
     (tmp_path/'profiles/personal-radar').mkdir(parents=True)
@@ -55,3 +59,29 @@ def test_generation_failure_does_not_deliver(monkeypatch,tmp_path):
     monkeypatch.setattr(m.subprocess,'run',fail)
     with pytest.raises(RuntimeError,match='model failure'):m.main()
     assert calls==['generate']
+
+
+def test_prepare_phase_never_sends(monkeypatch,tmp_path):
+    setup(monkeypatch,tmp_path,'run',True);calls=[]
+    monkeypatch.setattr(m.sys,'argv',['actions_run.py','run','--prepare-only'])
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append(args[-1]))
+    m.main()
+    assert calls==[]
+    m.prepare_presentation.assert_awaited_once()
+
+
+def test_send_phase_never_refreshes_preview_or_calls_model(monkeypatch,tmp_path):
+    setup(monkeypatch,tmp_path,'deliver',True);calls=[]
+    monkeypatch.setattr(m.sys,'argv',['actions_run.py','deliver','--send-only'])
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append(args[-1]))
+    m.main()
+    assert calls==['deliver']
+    m.prepare_presentation.assert_not_awaited()
+
+
+def test_failed_preview_prevents_delivery(monkeypatch,tmp_path):
+    setup(monkeypatch,tmp_path,'run',True);calls=[]
+    monkeypatch.setattr(m,'prepare_presentation',AsyncMock(side_effect=ValueError('invalid guide')))
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append(args[-1]))
+    with pytest.raises(ValueError,match='invalid guide'):m.main()
+    assert calls==[]
