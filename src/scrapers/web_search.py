@@ -52,7 +52,7 @@ class WebSearchScraper(BaseScraper):
             raise TimeoutError("Public search workers are busy")
         try:
             rows = DDGS(timeout=15).text(
-                query, region=config.region, timelimit="w", backend=config.backend,
+                query, region=config.region, timelimit=config.time_filter, backend=config.backend,
                 max_results=config.max_results_per_query,
             )
             return list(islice(rows, config.max_results_per_query))
@@ -147,7 +147,7 @@ class WebSearchScraper(BaseScraper):
                     "published_at_unknown": True,
                     "published_at_is_discovery_time": True,
                     "search_queries": list(dict.fromkeys(queries)),
-                    "search_time_filter": "week",
+                    "search_time_filter": "week" if config.time_filter == "w" else config.time_filter or "any",
                     "requested_since": since.isoformat(),
                     "search_snippet": snippet,
                     "content_level": "article_text" if body else "search_snippet",
