@@ -107,7 +107,7 @@ def test_teaser_is_short_specific_no_scores_code_or_toc_and_ends_with_full_url()
     assert "边界：作者单次实验" in text
     assert "另有 1 条" in text
     assert "```" not in text and "目录" not in text and "⭐" not in text
-    entries = [entry for entry in text.split("\n\n") if re.match(r"^\d\. ", entry)]
+    entries = re.findall(r"(?ms)^\d\. .*?(?=\n\n(?:\d\.|另有|完整详情)|\Z)", text)
     assert all(80 <= len(entry) <= 140 for entry in entries)
 
 
@@ -240,3 +240,31 @@ def test_normal_report_is_not_replaced_by_empty_view():
     page = render_detail_html(original, "2026-11-07")
     assert "具体方法、条件和证据边界仍保留" in page
     assert "本期没有达到筛选标准" not in page
+
+
+
+def test_wechat_paragraphs_survive_formatting_and_final_chunk_planning():
+    from src.services.wechat import format_markdown_for_wechat, plan_chunks
+
+    url = "https://example.com/daily/2026-11-07.html"
+    inputs = [classified(category) for category in ["前端", "产品", "运营", "AI"]]
+    result = render_wechat_teaser(inputs, "2026-11-07", url)
+    assert len(result) <= 900
+    assert "Horizon 日报｜2026-11-07\n\n工作里怎么用 AI？" in result
+    assert result.endswith("完整详情（含步骤、条件与原文）：\n\n" + url)
+    assert not re.search(r"(?<!\n)\n(?!\n)", result)
+    for item in inputs:
+        expected = f"【{item.category}】{item.title}\n\n看点：{item.why_it_matters}\n\n可做：{item.next_step}\n\n边界：{item.evidence_limit}"
+        assert expected in result
+    formatted = format_markdown_for_wechat(result)
+    assert formatted == result
+    chunks = plan_chunks(result, 1000, "zh", remaining=20)
+    assert chunks == [result]
+    # Even forced smaller messages retain paragraph boundaries within messages;
+    # each heading and each field remains its own paragraph rather than one run.
+    small_chunks = plan_chunks(result, 180, "zh", remaining=20)
+    assert len(small_chunks) > 1
+    reconstructed = "\n\n".join(small_chunks)
+    assert reconstructed == result
+    assert not re.search(r"(?<!\n)\n(?!\n)", reconstructed)
+    assert small_chunks[-1].endswith(url)

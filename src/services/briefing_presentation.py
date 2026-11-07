@@ -231,7 +231,7 @@ def render_wechat_teaser(items: Sequence[BriefingItem | Mapping[str, object]], d
         "工作里怎么用 AI？先看本期精选，步骤和条件见详情。" if items
         else "本期没有达到筛选标准的工作实践，不凑数。"
     )
-    title = f"Horizon 日报｜{day}\n{intro}"
+    title = f"Horizon 日报｜{day}\n\n{intro}"
     rendered = []
 
     def get(item, key):
@@ -269,14 +269,14 @@ def render_wechat_teaser(items: Sequence[BriefingItem | Mapping[str, object]], d
             lines.append(f"可做：{action}")
         if evidence:
             lines.append(f"边界：{evidence}")
-        rendered.append("\n".join(lines))
+        rendered.append("\n\n".join(lines))
     if categorized and missing:
         rendered.append("本期未选：" + "、".join(missing))
     elif not categorized and len(items) > len(selected):
         rendered.append(f"另有 {len(items) - len(selected)} 条内容，见完整详情。")
     elif not items:
         rendered.append("今天的完整内容已整理，点击下方查看。")
-    result = title + "\n\n" + "\n\n".join(rendered) + "\n\n完整详情（含步骤、条件与原文）：\n" + url
+    result = title + "\n\n" + "\n\n".join(rendered) + "\n\n完整详情（含步骤、条件与原文）：\n\n" + url
     if len(result) > 900:
         raise ValueError("Teaser exceeds presentation budget; shorten complete statements upstream")
     return result
