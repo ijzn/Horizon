@@ -1,0 +1,71 @@
+name: Personal Horizon WeChat
+on:
+  schedule:
+    - cron: '7 0 * * *' # 08:07 Asia/Shanghai: prepare before delivery
+    - cron: '0 1 * * *' # 09:00 Asia/Shanghai; GitHub may delay the trigger
+  workflow_dispatch:
+    inputs:
+      stage:
+        type: choice
+        options: [run, generate, deliver]
+        default: run
+        description: Generate and send now, prepare only, or send existing verified report
+      bootstrap:
+        type: boolean
+        default: false
+        description: Explicitly initialize from encrypted bootstrap (first run or deliberate recovery only)
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: personal-horizon-wechat
+  cancel-in-progress: false
+jobs:
+  daily:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      HORIZON_CHATGPT_AUTH_DIR: ${{ github.workspace }}/data/chatgpt-auth
+      HORIZON_MODEL: gpt-6.1-sol
+      TZ: Asia/Shanghai
+      EXPECTED_WORKFLOW: .github/workflows/personal-wechat.yml
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.26'
+      - run: uv sync --frozen --python 3.12
+      - name: Restore encrypted private runtime state
+        id: restore
+        env:
+          HORIZON_STATE_KEY: ${{ secrets.HORIZON_STATE_KEY }}
+          HORIZON_BOOTSTRAP_STATE: ${{ secrets.HORIZON_BOOTSTRAP_STATE }}
+          GH_TOKEN: ${{ github.token }}
+          BOOTSTRAP: ${{ inputs.bootstrap || false }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          uv run python scripts/actions_restore.py
+          uv run python scripts/actions_state.py restore --root . --input /tmp/horizon-state.enc
+          echo "restored=true" >> "$GITHUB_OUTPUT"
+      - name: Generate or deliver only to owner
+        timeout-minutes: 90
+        env:
+          STAGE: ${{ inputs.stage || (github.event.schedule == '7 0 * * *' && 'generate' || 'run') }}
+        run: uv run python scripts/actions_run.py "$STAGE"
+      - name: Encrypt latest state even after pipeline failure
+        id: pack
+        if: always() && steps.restore.outputs.restored == 'true'
+        env:
+          HORIZON_STATE_KEY: ${{ secrets.HORIZON_STATE_KEY }}
+        run: |
+          rm -f /tmp/horizon-state.enc
+          uv run python scripts/actions_state.py save --root . --output /tmp/horizon-state.enc
+      - name: Preserve rotating credentials and delivery ledger encrypted
+        if: always() && steps.pack.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-horizon-state
+          path: /tmp/horizon-state.enc
+          if-no-files-found: error
+          retention-days: 90
