@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from src.storage.manager import StorageManager
 from src.orchestrator import HorizonOrchestrator
 from src.services.wechat_subscribers import SubscriberStore
+from src.services.briefing_publish import load_preview, verify_published_detail
 
 ROOT = Path(__file__).resolve().parent
 os.chdir(ROOT)
@@ -43,7 +44,9 @@ async def main(stage):
         return
     if not ready.exists() or json.loads(ready.read_text()).get('date') != today:
         raise RuntimeError('No successfully prepared briefing for today; refusing stale delivery')
-    summary = report.read_text()
+    preview = load_preview(ROOT, today, report.read_text())
+    await verify_published_detail(ROOT, preview)
+    summary = preview['message']
     if not cfg.wechat or not cfg.wechat.enabled:
         raise RuntimeError('WeChat delivery is disabled')
     # Scheduled delivery is limited to the owner until friends are explicitly enabled.
