@@ -21,14 +21,33 @@ from cryptography.fernet import Fernet
 
 MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
 MAX_FILES = 1024
+ARCHIVE_DAYS = 90
 FIXED_PATHS = frozenset({
     "data/chatgpt-auth/credentials.json", "data/chatgpt-auth/host.json",
     "data/wechat_session.json", "data/wechat_subscribers/subscribers.json",
     "data/wechat_subscribers/delivery.json", "data/seen.json", "data/ready.json",
+    "data/wechat-preview.json", "data/public-briefings/index.html",
 })
 SUBSCRIBER_ID = re.compile(r"(?:owner|[a-f0-9]{12})\Z")
 SUBSCRIBER_PATH = re.compile(r"data/wechat_subscribers/(?:owner|[a-f0-9]{12})/wechat_session\.json\Z")
 REPORT_PATH = re.compile(r"data/summaries/horizon-(\d{4}-\d{2}-\d{2})-(?:zh|en)\.md\Z")
+ARCHIVE_PATH = re.compile(r"data/public-briefings/(\d{4}-\d{2}-\d{2})(?:-[a-f0-9]{12})?\.html\Z")
+
+
+def _archive_day(name: str) -> date | None:
+    match = ARCHIVE_PATH.fullmatch(name)
+    if not match:
+        return None
+    try:
+        value = date.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+    return value if value.isoformat() == match.group(1) else None
+
+
+def _recent_archive(name: str, day: str) -> bool:
+    archived = _archive_day(name)
+    return archived is not None and 0 <= (date.fromisoformat(day) - archived).days < ARCHIVE_DAYS
 
 
 def _today() -> str:
@@ -57,6 +76,8 @@ def _allowed(name: str, day: str) -> bool:
         return False
     if name in FIXED_PATHS or SUBSCRIBER_PATH.fullmatch(name):
         return True
+    if ARCHIVE_PATH.fullmatch(name):
+        return _recent_archive(name, day)
     report = REPORT_PATH.fullmatch(name)
     return bool(report and report.group(1) == day)
 
@@ -120,6 +141,12 @@ def _candidates(root: Path, day: str) -> list[str]:
                 names.add(f"data/wechat_subscribers/{child.name}/wechat_session.json")
     for language in ("zh", "en"):
         names.add(f"data/summaries/horizon-{day}-{language}.md")
+    archive = _check_path(root, "data/public-briefings")
+    if archive.exists():
+        for child in archive.iterdir():
+            relative = f"data/public-briefings/{child.name}"
+            if _recent_archive(relative, day):
+                names.add(relative)
     return sorted(names)
 
 
@@ -163,7 +190,8 @@ def restore(root: str | Path, input_path: str | Path) -> int:
     """Validate the whole authenticated payload before restoring private files.
 
     Yesterday's report is deliberately skipped, preserving same-day retry only.
-    Other state, including deduplication ledgers, is retained across days.
+    Other state, including deduplication ledgers and HTML archives, survives
+    across days. Archives older than the rolling retention window are skipped.
     """
     cipher = _cipher()
     root = _root(root)
@@ -191,6 +219,8 @@ def restore(root: str | Path, input_path: str | Path) -> int:
         total += len(content)
         if total > MAX_PAYLOAD_BYTES:
             raise ValueError("State size limit exceeded")
+        if ARCHIVE_PATH.fullmatch(relative) and not _recent_archive(relative, _today()):
+            continue
         if not REPORT_PATH.fullmatch(relative) or day == _today():
             validated.append((path, content))
     for path, content in validated:
