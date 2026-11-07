@@ -1,11 +1,15 @@
 """Validate the shipped four-role config and its actual selection quotas, offline."""
 from datetime import datetime, timezone
+import asyncio
 import json
 from pathlib import Path
+import pytest
 
 from src.models import Config, ContentItem, SourceType, ProcessingResult, ClassificationResult, ContentAnalysis
 from src.orchestrator import HorizonOrchestrator
 from src.processing import ProfileRegistry
+from src.processing.content import select_content
+from src.ai.analyzer import ContentAnalyzer
 
 ROOT = Path(__file__).parents[1]
 IDS = ['work-frontend', 'work-product', 'work-operations', 'work-ai']
@@ -75,3 +79,30 @@ def test_missing_or_low_quality_roles_do_not_get_filler():
                      item('work-product', 0, 6.9), item('work-ai', 0, 7)])
     assert [value.id for value in result.items] == ['work-frontend-0', 'work-ai-0']
     assert result.group_counts == {'work-frontend': 1, 'work-ai': 1}
+
+
+@pytest.mark.parametrize('pid', IDS)
+def test_real_analyzer_receives_late_practice_evidence_without_model_calls(pid):
+    """Regression: the former 1000-char prefix hid a long tutorial's verification."""
+    registry = ProfileRegistry.load(ROOT / 'profiles', 'work-ai')
+    evidence = 'VERIFICATION_EVIDENCE: compare the generated output against the reference fixture.'
+    content = 'Introductory context. ' * 250 + 'Detailed implementation. ' * 500 + evidence
+    assert evidence not in select_content(content, 1000, 'prefix')
+    captured = []
+
+    class OfflineClient:
+        async def complete(self, **kwargs):
+            captured.append(kwargs)
+            return json.dumps({'score': 7, 'reason': 'fixture only', 'summary': 'fixture', 'tags': ['fixture']})
+
+    value = item(pid, 0, 8)
+    value.profile = pid  # Source override avoids an unrelated classifier call.
+    value.content = content
+    asyncio.run(ContentAnalyzer(OfflineClient(), registry)._analyze_item(value))
+    assert len(captured) == 1
+    assert evidence in captured[0]['user']
+    assert '[Opening excerpt]' in captured[0]['user']
+    assert '[Closing excerpt]' in captured[0]['user']
+    assert len(select_content(content, registry.get(pid).definition.content.analysis_max_chars,
+                              registry.get(pid).definition.content.sampling)) <= 8000
+    assert value.processing.analysis.score == 7
