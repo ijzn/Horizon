@@ -184,6 +184,21 @@ def test_cli_roundtrip_is_silent(roots, capsys):
     assert capsys.readouterr() == ("", "")
 
 
+def test_analysis_snapshot_is_private_state_not_public_archive(roots):
+    source, destination, output, key = roots
+    name = 'data/analysis-snapshot.json'
+    snapshot = b'{"items":[{"score":6,"reason":"public source lacks concrete steps"}]}'
+    write(source, name, snapshot)
+    write(source, 'data/public-briefings/analysis-snapshot.json', b'must not publish')
+    assert state.pack(source, output) == 1
+    document = json.loads(Fernet(key).decrypt(output.read_bytes()))
+    assert set(document['files']) == {name}
+    assert state.restore(destination, output) == 1
+    assert (destination / name).read_bytes() == snapshot
+    assert stat.S_IMODE((destination / name).stat().st_mode) == 0o600
+    assert not (destination / 'data/public-briefings').exists()
+
+
 def test_archive_pack_retains_90_days_and_dedicated_latest_files(roots, monkeypatch):
     source, destination, output, key = roots
     monkeypatch.setattr(state, "_today", lambda: "2026-11-07")

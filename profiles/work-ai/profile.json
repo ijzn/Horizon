@@ -39,5 +39,10 @@
         "optional": true
       }
     ]
+  },
+  "content": {
+    "analysis_max_chars": 8000,
+    "enrichment_max_chars": 18000,
+    "sampling": "head-middle-tail"
   }
 }

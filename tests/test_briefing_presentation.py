@@ -209,3 +209,34 @@ def test_zero_selected_items_lists_all_missing_categories():
     result = render_wechat_teaser([], "2026-11-07", "https://example.com/detail")
     assert "本期未选：前端、产品、运营、AI" in result
     assert "【前端】" not in result
+
+
+
+def test_empty_teaser_does_not_claim_selected_practices():
+    result = render_wechat_teaser([], "2026-11-07", "https://example.com/detail")
+    assert "本期没有达到筛选标准的工作实践，不凑数" in result
+    assert "本期精选" not in result
+    assert "本期未选：前端、产品、运营、AI" in result
+    assert len(result) <= 900 and result.endswith("https://example.com/detail")
+
+
+def test_real_legacy_empty_report_uses_friendly_no_qualification_view():
+    from src.ai.summarizer import DailySummarizer, LABELS
+    original = DailySummarizer()._generate_empty_summary("2026-11-07", 102, LABELS["zh"])
+    assert "没有达到重要性阈值" in original[:600]
+    assert "降低当前 Profile" in original
+    page = render_detail_html(original, "2026-11-07")
+    assert "本期没有达到筛选标准的工作实践，不凑数" in page
+    assert "本期未选：前端、产品、运营、AI" in page
+    assert "降低" not in page and "检查 AI 模型" not in page
+    assert "已实测" not in page and "本期精选" not in page
+    assert "完整分析与实践步骤" not in page
+    # Rendering creates a view, leaving source bytes available for external SHA binding.
+    assert original == DailySummarizer()._generate_empty_summary("2026-11-07", 102, LABELS["zh"])
+
+
+def test_normal_report_is_not_replaced_by_empty_view():
+    original = "## 前端工作实践\n\n具体方法、条件和证据边界仍保留。"
+    page = render_detail_html(original, "2026-11-07")
+    assert "具体方法、条件和证据边界仍保留" in page
+    assert "本期没有达到筛选标准" not in page

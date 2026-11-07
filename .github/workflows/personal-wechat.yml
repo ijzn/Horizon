@@ -7,9 +7,9 @@ on:
     inputs:
       stage:
         type: choice
-        options: [run, generate, deliver]
+        options: [run, generate, deliver, format]
         default: run
-        description: Generate and send now, prepare only, or send existing verified report
+        description: Run, regenerate without sending, send verified guide, or reformat existing report only
       bootstrap:
         type: boolean
         default: false
@@ -68,7 +68,7 @@ jobs:
       - name: Publish mobile detail pages
         uses: actions/deploy-pages@v4
       - name: Deliver short guide after checking the published page
-        if: inputs.stage != 'generate' && github.event.schedule != '7 0 * * *'
+        if: inputs.stage != 'generate' && inputs.stage != 'format' && github.event.schedule != '7 0 * * *'
         run: uv run python scripts/actions_run.py deliver --send-only
       - name: Encrypt latest state even after pipeline failure
         id: pack

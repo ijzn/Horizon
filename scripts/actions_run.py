@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['generate', 'deliver', 'run'])
+    parser.add_argument('stage', choices=['generate', 'deliver', 'run', 'format'])
     phases = parser.add_mutually_exclusive_group()
     phases.add_argument('--prepare-only', action='store_true')
     phases.add_argument('--send-only', action='store_true')

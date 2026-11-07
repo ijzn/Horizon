@@ -5,7 +5,7 @@
     "languages": [
       "zh"
     ],
-    "analysis_concurrency": 1,
+    "analysis_concurrency": 2,
     "enrichment_concurrency": 1
   },
   "processing": {

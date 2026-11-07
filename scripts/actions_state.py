@@ -27,6 +27,7 @@ FIXED_PATHS = frozenset({
     "data/wechat_session.json", "data/wechat_subscribers/subscribers.json",
     "data/wechat_subscribers/delivery.json", "data/seen.json", "data/ready.json",
     "data/wechat-preview.json", "data/public-briefings/index.html",
+    "data/analysis-snapshot.json",
 })
 SUBSCRIBER_ID = re.compile(r"(?:owner|[a-f0-9]{12})\Z")
 SUBSCRIBER_PATH = re.compile(r"data/wechat_subscribers/(?:owner|[a-f0-9]{12})/wechat_session\.json\Z")

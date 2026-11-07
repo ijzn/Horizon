@@ -23,6 +23,7 @@ def save(path, value):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
     temp.replace(path)
+    path.chmod(0o600)
 
 async def main(stage):
     cfg = StorageManager().load_config()
@@ -36,7 +37,27 @@ async def main(stage):
         local.webhook.enabled = False
         local.wechat.enabled = False
         started = time.time()
-        await HorizonOrchestrator(local, StorageManager()).run(force_hours=24)
+        class DailyOrchestrator(HorizonOrchestrator):
+            async def analyze_items(self, items):
+                analyzed = await super().analyze_items(items)
+                save(ROOT / 'data/analysis-snapshot.json', {
+                    'date': today,
+                    'items': [item.model_dump(mode='json') for item in analyzed],
+                })
+                scored = sorted(
+                    [item for item in analyzed if item.processing and item.processing.analysis],
+                    key=lambda item: item.processing.analysis.score if item.processing.analysis.score is not None else -1,
+                    reverse=True,
+                )
+                for item in scored[:8]:
+                    print('Scoring diagnostic:', json.dumps({
+                        'title': item.title[:160],
+                        'profile': item.processing.classification.profile,
+                        'score': item.processing.analysis.score,
+                        'reason': item.processing.analysis.reason[:500],
+                    }, ensure_ascii=False))
+                return analyzed
+        await DailyOrchestrator(local, StorageManager()).run(force_hours=24)
         if not report.exists() or report.stat().st_mtime < started:
             raise RuntimeError('No fresh Chinese briefing was generated')
         save(ready, {'date': today, 'generated_at': datetime.now().isoformat()})
