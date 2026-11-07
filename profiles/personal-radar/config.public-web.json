@@ -10,9 +10,21 @@
   },
   "processing": {
     "profiles_dir": "profiles",
-    "default_profile": "personal-radar",
+    "default_profile": "work-ai",
     "profile_settings": {
-      "personal-radar": {
+      "work-frontend": {
+        "threshold": 7,
+        "topic_dedup": true
+      },
+      "work-product": {
+        "threshold": 7,
+        "topic_dedup": true
+      },
+      "work-operations": {
+        "threshold": 7,
+        "topic_dedup": true
+      },
+      "work-ai": {
         "threshold": 7,
         "topic_dedup": true
       }
@@ -27,73 +39,128 @@
         "name": "Simon Willison",
         "url": "https://simonwillison.net/atom/everything/",
         "category": "ai-tools",
-        "profile": "personal-radar"
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ]
       },
       {
         "name": "OpenAI News",
         "url": "https://openai.com/news/rss.xml",
         "category": "ai-tools",
-        "profile": "personal-radar"
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ]
       },
       {
         "name": "GitHub Blog",
         "url": "https://github.blog/feed/",
         "category": "open-source",
-        "profile": "personal-radar"
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ]
       },
       {
         "name": "Hugging Face",
         "url": "https://huggingface.co/blog/feed.xml",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "少数派",
         "url": "https://sspai.com/feed",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "阮一峰",
         "url": "https://www.ruanyifeng.com/blog/atom.xml",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "V2EX技术",
         "url": "https://www.v2ex.com/feed/tab/tech.xml",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "掘金",
         "url": "https://juejin.cn/rss",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "GitHub Changelog",
         "url": "https://github.blog/changelog/feed/",
         "category": "practice",
-        "profile": "personal-radar",
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ],
         "content_extractor": "trafilatura"
       },
       {
         "name": "anthropics/claude-code releases",
         "url": "https://github.com/anthropics/claude-code/releases.atom",
         "category": "practice",
-        "profile": "personal-radar"
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ]
       },
       {
         "name": "openai/codex releases",
         "url": "https://github.com/openai/codex/releases.atom",
         "category": "practice",
-        "profile": "personal-radar"
+        "profile": [
+          "work-frontend",
+          "work-product",
+          "work-operations",
+          "work-ai"
+        ]
       }
     ],
     "hackernews": {
@@ -101,76 +168,127 @@
       "fetch_top_stories": 20,
       "min_score": 100,
       "category": "discovery",
-      "profile": "personal-radar"
+      "profile": [
+        "work-frontend",
+        "work-product",
+        "work-operations",
+        "work-ai"
+      ]
     },
     "web_search": {
       "enabled": true,
       "queries": [
-        "AI coding agent practical tutorial official documentation",
-        "AI 编程 实战 教程 工作流",
-        "indie developer paying customers case study pricing",
-        "独立开发 产品 付费用户 获客 案例",
-        "site:github.com AI agent workflow tutorial",
-        "site:reddit.com/r/ClaudeAI workflow experience",
-        "site:x.com AI coding workflow tutorial",
-        "site:mp.weixin.qq.com AI 编程 实践",
-        "site:youtube.com AI coding tutorial",
-        "site:zhihu.com AI 编程 实践"
+        "AI 前端 页面 组件 测试 调试 实战 工作流",
+        "AI 产品经理 需求访谈 PRD 原型 验收 实践",
+        "AI 运营 内容 活动 用户反馈 数据分析 实操",
+        "AI 知识库 自动化 工作流 评测 实践 教程",
+        "AI frontend component browser debugging testing workflow tutorial",
+        "AI product manager user interviews PRD prototype acceptance criteria workflow",
+        "AI marketing operations content campaign customer feedback analysis workflow",
+        "AI knowledge base workflow automation evaluation practical tutorial",
+        "site:github.com AI workflow tutorial examples",
+        "site:reddit.com AI product operations workflow experience",
+        "site:mp.weixin.qq.com AI 产品 运营 实践",
+        "site:youtube.com AI frontend product workflow tutorial",
+        "site:zhihu.com AI 工作流 实践",
+        "site:x.com AI workflow practical example"
       ],
-      "max_results_per_query": 5,
-      "max_total_results": 40,
+      "max_results_per_query": 4,
+      "max_total_results": 60,
       "region": "wt-wt",
       "backend": "bing",
       "fetch_body": true,
       "max_body_chars": 18000,
       "category": "practice",
-      "profile": "personal-radar"
+      "profile": [
+        "work-frontend",
+        "work-product",
+        "work-operations",
+        "work-ai"
+      ]
     },
     "google_news": {
       "enabled": true,
-      "query": "\"AI agent\" OR \"Claude Code\" OR \"Codex\" OR \"AI 编程\"",
+      "query": "\"AI 工作流\" OR \"AI 产品经理\" OR \"AI 运营\" OR \"AI 前端\" OR \"AI knowledge base\"",
       "language": "zh-CN",
       "country": "CN",
       "ceid": "CN:zh-Hans",
       "max_results": 20,
       "category": "discovery",
-      "profile": "personal-radar"
+      "profile": [
+        "work-frontend",
+        "work-product",
+        "work-operations",
+        "work-ai"
+      ]
     },
     "github": [],
     "reddit": {
       "enabled": false,
       "subreddits": [],
-      "users": []
+      "users": [],
+      "profile": [
+        "work-frontend",
+        "work-product",
+        "work-operations",
+        "work-ai"
+      ]
     },
     "telegram": {
       "enabled": false,
-      "channels": []
+      "channels": [],
+      "profile": [
+        "work-frontend",
+        "work-product",
+        "work-operations",
+        "work-ai"
+      ]
     }
   },
   "collection": {
     "time_window_hours": 24
   },
   "digest": {
-    "max_items": 2,
+    "max_items": 4,
+    "group_by": "profile",
     "profile_order": [
-      "personal-radar"
+      "work-frontend",
+      "work-product",
+      "work-operations",
+      "work-ai"
     ],
     "category_groups": {
-      "ai": {
-        "limit": 4,
+      "work-frontend": {
+        "name": "前端",
+        "limit": 1,
         "categories": [
-          "ai-tools"
+          "work-frontend"
         ]
       },
-      "oss": {
-        "limit": 2,
+      "work-product": {
+        "name": "产品",
+        "limit": 1,
         "categories": [
-          "open-source"
+          "work-product"
+        ]
+      },
+      "work-operations": {
+        "name": "运营",
+        "limit": 1,
+        "categories": [
+          "work-operations"
+        ]
+      },
+      "work-ai": {
+        "name": "AI",
+        "limit": 1,
+        "categories": [
+          "work-ai"
         ]
       }
     },
     "default_group": "other",
-    "default_group_limit": 3
+    "default_group_limit": 1
   },
   "webhook": {
     "enabled": false
