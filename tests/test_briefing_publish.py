@@ -20,7 +20,7 @@ def preview(root,**overrides):
     return result
 
 
-@pytest.mark.parametrize('change',[{'date':'2026-11-06'},{'version':0},{'report_sha':'a'*64},{'items':[]}])
+@pytest.mark.parametrize('change',[{'date':'2026-11-06'},{'version':0},{'report_sha':'a'*64},{'items':[{}]}])
 def test_stale_or_invalid_preview_refused(tmp_path,change):
     preview(tmp_path,**change)
     with pytest.raises(ValueError):m.load_preview(tmp_path,DAY,REPORT)
@@ -37,12 +37,26 @@ def test_matching_cache_reuses_exact_message_and_keeps_code_off_wechat(tmp_path,
     assert list((tmp_path/'data/pages-site').glob('*.json'))==[]
 
 
+def test_empty_report_does_not_invent_a_topic_or_call_model(tmp_path,monkeypatch):
+    (tmp_path/'data').mkdir()
+    factory=AsyncMock();monkeypatch.setattr(m,'create_ai_client',factory)
+    report='# Horizon 每日速递\n\n已分析102条内容，但没有达到重要性阈值的条目。'
+    result=asyncio.run(m.prepare_presentation(tmp_path,DAY,report,None))
+    assert result['items']==[]
+    factory.assert_not_called()
+    assert '前端、产品、运营、AI' in result['message']
+
+
 def test_real_prepare_path_with_fake_model_rejects_invented_categories(tmp_path,monkeypatch):
     (tmp_path/'data').mkdir()
     fake=type('Client',(),{'complete':AsyncMock(return_value=json.dumps({'items':[{**ITEM,'category':'投资'}]}))})()
     monkeypatch.setattr(m,'create_ai_client',lambda _:fake)
     with pytest.raises(ValueError):asyncio.run(m.prepare_presentation(tmp_path,DAY,REPORT,None))
     assert not (tmp_path/'data/wechat-preview.json').exists()
+
+
+def test_whitespace_guide_is_not_a_valid_concrete_action():
+    with pytest.raises(ValueError):m.GuideItem.model_validate({**ITEM,'next_step':' '*20})
 
 
 @pytest.mark.parametrize('name',['credentials.json','.env','unrelated.html','2026-11-07.html'])
