@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import httpx
 from rich.console import Console
+from rich.markup import escape as escape_markup
 
 from .._file_utils import _atomic_write_text
 from ..ai.markdown_utils import clean_app_summary_markdown
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 ILINK_BASE_URL = "https://ilinkai.weixin.qq.com"
 ILINK_CHANNEL_VERSION = "2.4.9"  # Reference client's protocol revision.
+# Local reminder estimate, not a documented Tencent server quota or time window.
 CONTEXT_MESSAGE_BUDGET = 10
 SESSION_FILE = "wechat_session.json"
 API_TIMEOUT = 15.0
@@ -50,9 +52,24 @@ def _random_wechat_uin() -> str:
     return base64.b64encode(str(secrets.randbits(32)).encode("ascii")).decode("ascii")
 
 
+def _safe_error_detail(message: str, secret_values=()) -> str:
+    """Bound platform-controlled diagnostics and redact recognizable credentials."""
+    text = str(message)
+    for value in secret_values:
+        if isinstance(value, str) and value:
+            text = text.replace(value, "[redacted]")
+    text = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [redacted]", text)
+    text = re.sub(
+        r'''(?i)(["']?(?:bot_token|context_token|access_token|refresh_token|authorization|password|secret|api_key)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)''',
+        r"\1[redacted]", text,
+    )
+    text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+    return text[:180]
+
+
 class ILinkError(Exception):
     def __init__(self, message: str, *, ret: int | None = None, errcode: int | None = None):
-        super().__init__(message)
+        super().__init__(_safe_error_detail(message))
         self.ret = ret
         self.errcode = errcode
 
@@ -62,6 +79,11 @@ class ILinkError(Exception):
 
     @property
     def budget_exhausted(self) -> bool:
+        """Deprecated compatibility alias for ret=-2, not proof of quota exhaustion.
+
+        Tencent's published client does not define this code's server meaning.
+        Do not infer a budget or mutate successful-send counters from this alias.
+        """
         return self.ret == -2
 
     def hint(self) -> str:
@@ -70,12 +92,12 @@ class ILinkError(Exception):
                 "WeChat receive session timed out (-14); delivery may still work. "
                 "If this persists, run 'horizon-wechat login --force'."
             )
-        if self.budget_exhausted:
+        if self.ret == -2:
             return (
-                "WeChat refused the message (-2), usually because the reply budget is exhausted. "
-                "Send the bot a message, then run Horizon again."
+                f"微信平台拒收 ret=-2：{escape_markup(str(self))}；"
+                "可能需要刷新会话或稍后重试，具体原因未获官方确认。"
             )
-        return f"WeChat API error: {self}"
+        return f"WeChat API error: {escape_markup(str(self))}"
 
 
 @dataclass
@@ -165,7 +187,10 @@ class ILinkClient:
         ret, errcode = data.get("ret"), data.get("errcode")
         if ret not in (None, 0) or errcode not in (None, 0):
             raise ILinkError(
-                f"ret={ret}, errcode={errcode}: {data.get('errmsg', '')}",
+                _safe_error_detail(
+                    f"ret={ret}, errcode={errcode}: {data.get('errmsg', '')}",
+                    (self.bot_token, (payload or {}).get('msg', {}).get('context_token')),
+                ),
                 ret=ret, errcode=errcode,
             )
         return data
@@ -269,8 +294,8 @@ def plan_chunks(text: str, limit: int, lang: str, remaining: int = CONTEXT_MESSA
     chunks = split_text_chunks(text, limit)
     if chunks and remaining - len(chunks) <= 2:
         footer = "\n\n> " + (
-            "回复任意消息，以补充微信推送额度。" if lang == "zh"
-            else "Reply to the bot to renew the WeChat reply budget."
+            "如后续收不到日报，请给机器人发条消息后重试。" if lang == "zh"
+            else "If future briefings do not arrive, message the bot and retry."
         )
         if len(footer) < limit:
             chunks = split_text_chunks(text, limit - len(footer))
@@ -370,15 +395,9 @@ class WeChatNotifier:
             if not chunks:
                 return WeChatDeliveryResult(WeChatDeliveryStatus.SKIPPED, "empty message")
             for chunk in chunks:
-                try:
-                    await self.client().send_text(
-                        self.session.user_id, chunk, context_token=self.session.context_token,
-                    )
-                except ILinkError as exc:
-                    if exc.budget_exhausted:
-                        self.session.context_sends = CONTEXT_MESSAGE_BUDGET
-                        self.session.save(self.session_path)
-                    raise
+                await self.client().send_text(
+                    self.session.user_id, chunk, context_token=self.session.context_token,
+                )
                 sent += 1
                 self.session.context_sends += 1
                 self.session.save(self.session_path)
