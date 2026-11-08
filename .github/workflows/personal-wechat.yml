@@ -86,7 +86,7 @@ jobs:
         if: always() && steps.pack.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: personal-horizon-state
+          name: personal-horizon-state-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/horizon-state.enc
           if-no-files-found: error
           retention-days: 7
