@@ -42,12 +42,13 @@ def test_real_schedules_convert_to_shanghai_and_route_without_accidental_generat
     for schedule in schedules:
         minute, hour, day, month, weekday = schedule.split()
         assert (day, month, weekday) == ('*', '*', '*')
-        for value in minute.split(','):
-            local = datetime(2026, 11, 8, int(hour), int(value), tzinfo=timezone.utc).astimezone(ZoneInfo('Asia/Shanghai'))
-            actual[local.strftime('%H:%M')] = (evaluate(stage_expression(), schedule), bool(evaluate(delivery_condition(), schedule)))
+        for hour_value in hour.split(','):
+            for value in minute.split(','):
+                local = datetime(2026, 11, 8, int(hour_value), int(value), tzinfo=timezone.utc).astimezone(ZoneInfo('Asia/Shanghai'))
+                actual[local.strftime('%H:%M')] = (evaluate(stage_expression(), schedule), bool(evaluate(delivery_condition(), schedule)))
     assert actual == {
         '08:07': ('generate', False), '09:00': ('run', True),
-        '09:17': ('deliver', True), '09:37': ('deliver', True), '09:57': ('deliver', True),
+        '10:17': ('deliver', True), '12:17': ('deliver', True),
     }
 
 
