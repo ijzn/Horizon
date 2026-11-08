@@ -4,12 +4,37 @@ from datetime import datetime
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import zipfile
 
 LIMIT = 48 * 1024 * 1024
 OUTPUT = Path('/tmp/horizon-state.enc')
+STATE_NAME = re.compile(r'personal-horizon-state-([1-9][0-9]{0,19})-([1-9][0-9]{0,9})\Z')
+
+
+def state_artifact(artifact):
+    """Allow the old exact name or an attempt name bound to its owning run."""
+    name = artifact.get('name')
+    if name == 'personal-horizon-state':
+        return True
+    if not isinstance(name, str):
+        return False
+    match = STATE_NAME.fullmatch(name)
+    return bool(match and int(match.group(1)) == artifact.get('workflow_run', {}).get('id'))
+
+
+def state_artifacts(repo):
+    # The API has no prefix filter. Page through all names before comparing
+    # server creation times, so public Pages uploads cannot crowd out state.
+    artifacts = []
+    for page in range(1, 101):
+        entries = json.loads(api(f'repos/{repo}/actions/artifacts?per_page=100&page={page}'))['artifacts']
+        artifacts.extend(artifact for artifact in entries if state_artifact(artifact))
+        if len(entries) < 100:
+            return artifacts
+    raise RuntimeError('State artifact listing exceeded pagination limit')
 
 
 def api(path):
@@ -29,7 +54,7 @@ def main():
     else:
         repo = os.environ['GH_REPO']
         # Artifact IDs are not guaranteed to be chronological. Use server time.
-        artifacts = json.loads(api(f'repos/{repo}/actions/artifacts?name=personal-horizon-state&per_page=100'))['artifacts']
+        artifacts = state_artifacts(repo)
         chosen = None
         def created(artifact):
             stamp = datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00'))
