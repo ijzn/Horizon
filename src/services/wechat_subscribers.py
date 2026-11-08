@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,23 @@ from .wechat import SESSION_FILE, WeChatNotifier, WeChatSession
 
 
 _ID = re.compile(r"^(?:owner|[a-f0-9]{12})$")
+# Conservative local backoff policy; not a Tencent TTL or recovery guarantee.
+SEND_COOLDOWN_SECONDS = 60 * 60
+
+
+def _utc_timestamp() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _bot_cooldown_keys(session) -> tuple[str, ...]:
+    """Share a backoff across registrations of the same bot, never raw secrets."""
+    keys = []
+    for field in ("bot_id", "bot_token"):
+        identity = getattr(session, field, None)
+        if isinstance(identity, str) and identity:
+            digest = hashlib.sha256((field + "\0" + identity).encode("utf-8")).hexdigest()
+            keys.append("bot:" + digest)
+    return tuple(keys)
 
 
 @dataclass(frozen=True)
@@ -279,6 +297,18 @@ class SubscriberStore:
             ledger = self._read(self.ledger_path, {"version": 1, "sent": {}})
             if not isinstance(ledger.get("sent"), dict):
                 raise ValueError("Invalid delivery ledger")
+            cooldowns = ledger.get("send_cooldowns", {})
+            if not isinstance(cooldowns, dict):
+                raise ValueError("Invalid send cooldown ledger")
+            for key, record in cooldowns.items():
+                until = record.get("retry_not_before") if isinstance(record, dict) else None
+                if (
+                    not isinstance(key, str) or not re.fullmatch(r"bot:[a-f0-9]{64}", key)
+                    or type(until) not in (int, float) or not math.isfinite(until) or until <= 0
+                    or record.get("reason") != "ret_-2"
+                ):
+                    raise ValueError("Invalid send cooldown record")
+            ledger = {**ledger, "send_cooldowns": cooldowns}
             outcomes = []
             attempted_targets = set()
             factory = notifier_factory or WeChatNotifier
@@ -302,13 +332,20 @@ class SubscriberStore:
                     session = getattr(notifier, "session", None)
                     identity = getattr(session, "user_id", None)
                     target = ("user:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()) if identity else "subscriber:" + sid
-                    if target in attempted_targets:
-                        outcomes.append(SubscriberDelivery(sid, subscriber.name, "duplicate"))
-                        continue
                     prior = ledger["sent"].get(target, {})
                     if not isinstance(prior, dict):
                         raise ValueError("Invalid subscriber delivery history")
                     if digest in prior and not force:
+                        outcomes.append(SubscriberDelivery(sid, subscriber.name, "duplicate"))
+                        continue
+                    bot_keys = _bot_cooldown_keys(session)
+                    if any(
+                        ledger["send_cooldowns"].get(key, {}).get("retry_not_before", 0) > _utc_timestamp()
+                        for key in bot_keys
+                    ):
+                        outcomes.append(SubscriberDelivery(sid, subscriber.name, "failed", warning="local_send_cooldown"))
+                        continue
+                    if target in attempted_targets:
                         outcomes.append(SubscriberDelivery(sid, subscriber.name, "duplicate"))
                         continue
                     result = await notifier.send_daily_summary(summary, lang)
@@ -318,11 +355,28 @@ class SubscriberStore:
                     # transmission, however, avoid re-sending through an alias.
                     if result.sent or chunks:
                         attempted_targets.add(target)
+                    # Only a structured platform return code starts this local
+                    # policy. New inbound contexts and --force do not clear it.
+                    if getattr(result, "ret", None) == -2 and not result.sent and bot_keys:
+                        ledger = {
+                            **ledger,
+                            "send_cooldowns": {
+                                **ledger["send_cooldowns"],
+                                **{
+                                    key: {
+                                        "retry_not_before": _utc_timestamp() + SEND_COOLDOWN_SECONDS,
+                                        "reason": "ret_-2",
+                                    }
+                                    for key in bot_keys
+                                },
+                            },
+                        }
+                        _private_write(self.ledger_path, ledger)
                     if not result.sent:
                         warning = "partial_delivery_retry_may_duplicate" if chunks else "delivery_failed"
                         outcomes.append(SubscriberDelivery(sid, subscriber.name, "failed", chunks_sent=chunks, warning=warning))
                         continue
-                    updated = {"version": 1, "sent": dict(ledger["sent"])}
+                    updated = {**ledger, "version": 1, "sent": dict(ledger["sent"])}
                     updated["sent"][target] = {**prior, digest: datetime.now(timezone.utc).isoformat()}
                     _private_write(self.ledger_path, updated)
                     ledger = updated
