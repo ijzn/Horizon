@@ -3,6 +3,7 @@ on:
   schedule:
     - cron: '7 0 * * *' # 08:07 Asia/Shanghai: prepare before delivery
     - cron: '0 1 * * *' # 09:00 Asia/Shanghai; GitHub may delay the trigger
+    - cron: '17,37,57 1 * * *' # 09:17/09:37/09:57 Asia/Shanghai: retry the verified report
   workflow_dispatch:
     inputs:
       stage:
@@ -57,7 +58,7 @@ jobs:
         id: prepare
         timeout-minutes: 90
         env:
-          STAGE: ${{ inputs.stage || (github.event.schedule == '7 0 * * *' && 'generate' || 'run') }}
+          STAGE: ${{ inputs.stage || (github.event.schedule == '7 0 * * *' && 'generate' || github.event.schedule == '17,37,57 1 * * *' && 'deliver' || 'run') }}
         run: uv run python scripts/actions_run.py "$STAGE" --prepare-only
       - name: Check GitHub Pages configuration
         uses: actions/configure-pages@v5
@@ -85,4 +86,4 @@ jobs:
           name: personal-horizon-state
           path: /tmp/horizon-state.enc
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
