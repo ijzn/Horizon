@@ -66,6 +66,9 @@ def test_bootstrap_requires_explicit_manual_opt_in_and_state_retention_is_privat
     assert evaluate(expression, bootstrap=True) is True
     state = content.split('      - name: Preserve rotating credentials and delivery ledger encrypted\n', 1)[1]
     assert re.search(r'^          retention-days: 7$', state, re.M)
+    state_name = re.search(r'^          name: (.+)$', state, re.M).group(1)
+    assert state_name == 'personal-horizon-state-${{ github.run_id }}-${{ github.run_attempt }}'
+    assert 'overwrite:' not in state
     pages = content.split('      - name: Upload public report HTML only\n', 1)[1].split('      - name:', 1)[0]
     assert 'retention-days:' not in pages
     assert 'path: data/pages-site' in pages
