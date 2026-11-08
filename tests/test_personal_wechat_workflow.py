@@ -79,3 +79,18 @@ def test_failed_prepare_or_publish_cannot_be_bypassed_by_delivery_condition():
     assert 'always(' not in delivery_condition() and 'failure(' not in delivery_condition()
     assert 'actions_run.py deliver --send-only' in content
     assert 'cancel-in-progress: false' in content
+
+
+def test_pages_upload_and_deploy_share_attempt_specific_artifact_identity():
+    content = text()
+    upload = content.split('      - name: Upload public report HTML only\n', 1)[1].split('      - name:', 1)[0]
+    deploy = content.split('      - name: Publish mobile detail pages\n', 1)[1].split('      - name:', 1)[0]
+    uploaded_name = re.search(r'^          name: (.+)$', upload, re.M).group(1)
+    deployed_name = re.search(r'^          artifact_name: (.+)$', deploy, re.M).group(1)
+    assert uploaded_name == deployed_name
+    assert '${{ github.run_id }}' in uploaded_name
+    assert '${{ github.run_attempt }}' in uploaded_name
+    # Same run's rerun must not collide with its earlier published artifact.
+    def render(run, attempt):
+        return uploaded_name.replace('${{ github.run_id }}', str(run)).replace('${{ github.run_attempt }}', str(attempt))
+    assert len({render(100, 1), render(100, 2), render(101, 1)}) == 3
