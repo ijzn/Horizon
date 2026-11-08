@@ -318,6 +318,7 @@ class WeChatDeliveryResult:
     status: WeChatDeliveryStatus
     detail: str | None = None
     chunks_sent: int = 0
+    ret: int | None = None
 
     @property
     def sent(self) -> bool:
@@ -379,6 +380,7 @@ class WeChatNotifier:
         if not self.config.enabled:
             return WeChatDeliveryResult(WeChatDeliveryStatus.DISABLED)
         sent = 0
+        ret = None
         try:
             # Refresh before checking readiness: login may have saved credentials before
             # the user's first message arrived.
@@ -403,6 +405,7 @@ class WeChatNotifier:
                 self.session.save(self.session_path)
         except ILinkError as exc:
             status, detail = WeChatDeliveryStatus.PLATFORM_FAILURE, exc.hint()
+            ret = exc.ret
         except (httpx.HTTPError, UnsafeURLError) as exc:
             status, detail = WeChatDeliveryStatus.NETWORK_FAILURE, str(exc)
         except Exception as exc:
@@ -411,7 +414,7 @@ class WeChatNotifier:
             return WeChatDeliveryResult(WeChatDeliveryStatus.SUCCESS, chunks_sent=sent)
         logger.error("WeChat delivery failed after %d messages: %s", sent, detail)
         self.console.print(f"[red]WeChat delivery failed: {detail}[/red]")
-        return WeChatDeliveryResult(status, detail, sent)
+        return WeChatDeliveryResult(status, detail, sent, ret=ret)
 
     async def send_daily_summary(self, summary: str, lang: str) -> WeChatDeliveryResult:
         if self.config.languages and lang not in self.config.languages:

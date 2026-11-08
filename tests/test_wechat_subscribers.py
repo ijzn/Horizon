@@ -400,3 +400,168 @@ def test_broken_failure_ledger_does_not_mask_original_generation_error(tmp_path)
     store.ledger_path.write_text("not valid JSON")
     adapter = SubscriberWeChatNotifier(CONFIG, StorageManager(data_dir=str(tmp_path)))
     assert run(adapter.send_failure("2026-11-04", "original generation error")) == []
+
+
+def cooldown_setup(tmp_path, monkeypatch, *, bot_id="dummy-bot", token="dummy-token"):
+    store = SubscriberStore(tmp_path)
+    friend = store.add("冷却测试")
+    WeChatSession(bot_token=token, bot_id=bot_id, user_id="dummy-user", context_token="ctx-before").save(store.session_path(friend.id))
+    clock = [1_800_000_000.0]
+    monkeypatch.setattr(module, "_utc_timestamp", lambda: clock[0])
+    return store, friend, clock
+
+
+def rejected(chunks=0):
+    return WeChatDeliveryResult(WeChatDeliveryStatus.PLATFORM_FAILURE, "prepare failed", chunks_sent=chunks, ret=-2)
+
+
+def test_cooldown_persists_across_restart_force_and_new_inbound_context(tmp_path, monkeypatch):
+    store, friend, clock = cooldown_setup(tmp_path, monkeypatch)
+    calls = []
+    result = run(store.broadcast("same briefing", CONFIG, notifier_factory=fake_transport(calls, {"dummy-user": rejected()})))
+    assert result[0].status == "failed" and not result[0].sent and result[0].chunks_sent == 0
+    ledger = json.loads(store.ledger_path.read_text())
+    assert ledger["sent"] == {}
+    assert len(ledger["send_cooldowns"]) == 2
+    record = next(iter(ledger["send_cooldowns"].values()))
+    assert record == {"retry_not_before": clock[0] + 3600, "reason": "ret_-2"}
+    assert "dummy-bot" not in store.ledger_path.read_text() and "dummy-token" not in store.ledger_path.read_text()
+    assert os.stat(store.ledger_path).st_mode & 0o777 == 0o600
+    saved = WeChatSession.load(store.session_path(friend.id))
+    saved.update_from_message({"message_type": 1, "from_user_id": "dummy-user", "context_token": "new-inbound"})
+    saved.save(store.session_path(friend.id))
+    clock[0] += 1200
+    restored = SubscriberStore(tmp_path)
+    result = run(restored.broadcast("same briefing", CONFIG, force=True, notifier_factory=fake_transport(calls)))
+    assert result[0].status == "failed" and result[0].warning == "local_send_cooldown"
+    assert not result[0].sent and result[0].chunks_sent == 0
+    assert len(calls) == 1
+    assert json.loads(store.ledger_path.read_text())["sent"] == {}
+
+
+def test_cooldown_exact_boundary_and_rejection_extends_local_wait(tmp_path, monkeypatch):
+    store, _, clock = cooldown_setup(tmp_path, monkeypatch)
+    started = clock[0]
+    calls = []
+    transport = fake_transport(calls, {"dummy-user": rejected()})
+    run(store.broadcast("briefing", CONFIG, notifier_factory=transport))
+    clock[0] = started + 3599.999
+    result = run(store.broadcast("briefing", CONFIG, notifier_factory=transport))
+    assert result[0].warning == "local_send_cooldown" and len(calls) == 1
+    clock[0] = started + 3600
+    result = run(store.broadcast("briefing", CONFIG, notifier_factory=transport))
+    assert result[0].status == "failed" and len(calls) == 2
+    saved = next(iter(json.loads(store.ledger_path.read_text())["send_cooldowns"].values()))
+    assert saved["retry_not_before"] == started + 7200
+    clock[0] += 60
+    run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls)))
+    assert len(calls) == 2
+    clock[0] = started + 7200
+    result = run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls)))
+    assert result[0].sent and len(calls) == 3
+    assert run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls)))[0].status == "duplicate"
+    assert len(calls) == 3
+
+
+def test_same_bot_alias_is_blocked_but_other_bot_still_receives(tmp_path, monkeypatch):
+    store, first, _ = cooldown_setup(tmp_path, monkeypatch)
+    alias, other = store.add("同bot第二注册"), store.add("另一个bot")
+    # Different user IDs are deliberate: the cooldown belongs to the bot, not recipient.
+    WeChatSession(bot_token="second-token", bot_id="dummy-bot", user_id="alias-user", context_token="ctx").save(store.session_path(alias.id))
+    WeChatSession(bot_token="other-token", bot_id="other-bot", user_id="other-user", context_token="ctx").save(store.session_path(other.id))
+    calls = []
+    result = run(store.broadcast("briefing", CONFIG, subscriber_ids=[first.id, alias.id, other.id], notifier_factory=fake_transport(calls, {"dummy-user": rejected()})))
+    assert [r.status for r in result] == ["failed", "failed", "sent"]
+    assert result[1].warning == "local_send_cooldown"
+    assert [call[0] for call in calls] == ["dummy-user", "other-user"]
+    # A successful different bot must not discard the just-recorded cooldown map.
+    assert json.loads(store.ledger_path.read_text())["send_cooldowns"]
+
+
+def test_missing_bot_id_uses_same_token_hash_across_aliases(tmp_path, monkeypatch):
+    store, first, _ = cooldown_setup(tmp_path, monkeypatch, bot_id="")
+    alias = store.add("旧式会话")
+    WeChatSession(bot_token="dummy-token", user_id="alias-user", context_token="ctx").save(store.session_path(alias.id))
+    calls = []
+    result = run(store.broadcast("briefing", CONFIG, subscriber_ids=[first.id, alias.id], notifier_factory=fake_transport(calls, {"dummy-user": rejected()})))
+    assert result[1].warning == "local_send_cooldown" and len(calls) == 1
+
+
+@pytest.mark.parametrize("failure", [
+    WeChatDeliveryResult(WeChatDeliveryStatus.PLATFORM_FAILURE, "ret=-2 prepare failed"),
+    WeChatDeliveryResult(WeChatDeliveryStatus.NETWORK_FAILURE, "ret=-2 prepare failed"),
+    WeChatDeliveryResult(WeChatDeliveryStatus.PLATFORM_FAILURE, "other platform error", ret=-14),
+])
+def test_hint_text_or_other_return_code_does_not_create_cooldown(tmp_path, monkeypatch, failure):
+    store, _, _ = cooldown_setup(tmp_path, monkeypatch)
+    calls = []
+    run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls, {"dummy-user": failure})))
+    result = run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls)))
+    assert result[0].sent and len(calls) == 2
+    assert not json.loads(store.ledger_path.read_text())["send_cooldowns"]
+
+
+def test_partial_minus_two_records_cooldown_without_marking_delivered(tmp_path, monkeypatch):
+    store, _, _ = cooldown_setup(tmp_path, monkeypatch)
+    calls = []
+    result = run(store.broadcast("briefing", CONFIG, notifier_factory=fake_transport(calls, {"dummy-user": rejected(chunks=1)})))
+    assert result[0].chunks_sent == 1 and not result[0].sent
+    assert result[0].warning == "partial_delivery_retry_may_duplicate"
+    assert json.loads(store.ledger_path.read_text())["sent"] == {}
+    result = run(store.broadcast("briefing", CONFIG, force=True, notifier_factory=fake_transport(calls)))
+    assert result[0].warning == "local_send_cooldown" and len(calls) == 1
+
+
+def test_concurrent_broadcast_observes_first_calls_persisted_cooldown(tmp_path, monkeypatch):
+    store, _, _ = cooldown_setup(tmp_path, monkeypatch)
+    calls = []
+    transport = fake_transport(calls, {"dummy-user": rejected()}, delay=0.01)
+
+    async def both():
+        return await asyncio.gather(store.broadcast("briefing", CONFIG, notifier_factory=transport), SubscriberStore(tmp_path).broadcast("briefing", CONFIG, notifier_factory=transport))
+
+    results = run(both())
+    assert len(calls) == 1
+    assert all(not group[0].sent for group in results)
+    assert sum(group[0].warning == "local_send_cooldown" for group in results) == 1
+
+
+
+def test_legacy_alias_without_bot_id_shares_token_cooldown(tmp_path, monkeypatch):
+    store, first, _ = cooldown_setup(tmp_path, monkeypatch)
+    alias = store.add("缺少botid的旧注册")
+    WeChatSession(bot_token="dummy-token", user_id="alias-user", context_token="ctx").save(store.session_path(alias.id))
+    calls = []
+    result = run(store.broadcast("briefing", CONFIG, subscriber_ids=[first.id, alias.id], notifier_factory=fake_transport(calls, {"dummy-user": rejected()})))
+    assert result[1].warning == "local_send_cooldown" and len(calls) == 1
+
+
+def test_partial_failure_alias_is_cooldown_failure_not_false_delivery_duplicate(tmp_path, monkeypatch):
+    store, first, _ = cooldown_setup(tmp_path, monkeypatch)
+    alias = store.add("同一接收者别名")
+    WeChatSession(bot_token="dummy-token", bot_id="dummy-bot", user_id="dummy-user", context_token="ctx").save(store.session_path(alias.id))
+    calls = []
+    result = run(store.broadcast("briefing", CONFIG, subscriber_ids=[first.id, alias.id], notifier_factory=fake_transport(calls, {"dummy-user": rejected(chunks=1)})))
+    assert result[0].status == "failed" and result[0].chunks_sent == 1
+    assert result[1].status == "failed" and result[1].chunks_sent == 0
+    assert result[1].warning == "local_send_cooldown" and not result[1].sent
+    assert len(calls) == 1
+
+
+def test_cooldown_write_failure_does_not_retry_partial_delivery_via_other_bot_alias(tmp_path, monkeypatch):
+    store, first, _ = cooldown_setup(tmp_path, monkeypatch)
+    alias = store.add("其他bot同接收者")
+    WeChatSession(bot_token="other-token", bot_id="other-bot", user_id="dummy-user", context_token="ctx").save(store.session_path(alias.id))
+    calls = []
+    original = module._private_write
+
+    def fail_ledger(path, value):
+        if path == store.ledger_path:
+            raise OSError("simulated persistence failure")
+        return original(path, value)
+
+    monkeypatch.setattr(module, "_private_write", fail_ledger)
+    result = run(store.broadcast("briefing", CONFIG, subscriber_ids=[first.id, alias.id], notifier_factory=fake_transport(calls, {"dummy-user": rejected(chunks=1)})))
+    assert result[0].status == "failed" and result[0].chunks_sent == 1
+    assert result[1].status == "duplicate" and not result[1].sent
+    assert len(calls) == 1
