@@ -226,12 +226,12 @@ def test_first_context_is_picked_up_before_readiness_check_and_chat_is_not_answe
     assert saved.get_updates_buf == "buf-2" and saved.context_sends == 1
 
 
-def test_server_budget_error_stops_partial_delivery_and_new_context_recovers(tmp_path, monkeypatch):
+def test_platform_rejection_stops_partial_delivery_and_new_context_recovers(tmp_path, monkeypatch):
     fake = FakeClient(fail_after=1)
     sender, _ = notifier(tmp_path, monkeypatch, session(context_sends=9), fake, chunk_size=200)
     result = run(sender.send_text("a" * 500, "en"))
     assert result.status == WeChatDeliveryStatus.PLATFORM_FAILURE and result.chunks_sent == 1
-    assert "Reply to the bot" in fake.sent[0][1]
+    assert "message the bot and retry" in fake.sent[0][1]
     assert WeChatSession.load(sender.session_path).context_sends == CONTEXT_MESSAGE_BUDGET
     fake.fail_after = None
     fake.updates = {"msgs": [message()]}
@@ -274,3 +274,68 @@ def test_disabled_filtered_missing_and_stale_sessions_do_not_send(tmp_path, monk
     sender.session_path.unlink()
     assert run(sender.send_text("x")).status == WeChatDeliveryStatus.SKIPPED
     assert sender.session is None and not fake.sent
+
+
+
+def test_minus_two_hint_preserves_short_reason_without_claiming_quota_exhaustion():
+    error = ILinkError("prepare failed", ret=-2)
+    hint = error.hint()
+    assert "ret=-2" in hint and "prepare failed" in hint
+    assert "具体原因未获官方确认" in hint
+    assert "budget" not in hint and "exhausted" not in hint and "额度耗尽" not in hint
+    assert error.budget_exhausted  # Legacy name only, not server-policy evidence.
+
+
+def test_minus_two_diagnostic_is_bounded_escaped_and_redacts_credentials():
+    error = ILinkError('prepare failed [bold]spoof[/bold] bot_token="DUMMY_SECRET" Authorization: Bearer DUMMY_BEARER\n' + "x" * 500, ret=-2)
+    hint = error.hint()
+    assert "DUMMY_SECRET" not in hint and "DUMMY_BEARER" not in hint
+    assert "\n" not in hint and len(hint) < 300
+    assert r"\[bold]" in hint
+
+
+def test_minus_two_zero_delivery_keeps_success_estimate_then_new_context_can_retry(tmp_path, monkeypatch):
+    fake = FakeClient(send_error=ILinkError("prepare failed", ret=-2))
+    sender, _ = notifier(tmp_path, monkeypatch, session(context_sends=3), fake)
+    result = run(sender.send_text("today"))
+    assert result.status == WeChatDeliveryStatus.PLATFORM_FAILURE
+    assert not result.sent and result.chunks_sent == 0 and not fake.sent
+    assert "prepare failed" in result.detail and "ret=-2" in result.detail
+    assert WeChatSession.load(sender.session_path).context_sends == 3
+    fake.send_error = None
+    fake.updates = {"msgs": [message()]}
+    run(sender.refresh_context())
+    assert WeChatSession.load(sender.session_path).context_sends == 0
+    retried = run(sender.send_text("today"))
+    assert retried.sent and retried.chunks_sent == 1
+    assert fake.sent == [("user@im.wechat", "today", "ctx-2")]
+    assert WeChatSession.load(sender.session_path).context_sends == 1
+
+
+def test_minus_two_partial_delivery_counts_only_actual_successes(tmp_path, monkeypatch):
+    fake = FakeClient(fail_after=1)
+    sender, _ = notifier(tmp_path, monkeypatch, session(context_sends=2), fake, chunk_size=200)
+    result = run(sender.send_text("a" * 500, "en"))
+    assert not result.sent and result.chunks_sent == 1
+    assert WeChatSession.load(sender.session_path).context_sends == 3
+
+
+def test_api_error_redacts_known_echoed_bot_and_context_tokens(monkeypatch):
+    bot, context = "DUMMY_PRIVATE_BOT", "DUMMY_PRIVATE_CONTEXT"
+    transport = Transport([(200, {"ret": -2, "errmsg": f"prepare failed ({bot}) ({context})"})])
+    monkeypatch.setattr(wechat, "safe_request", transport)
+    with pytest.raises(ILinkError) as captured:
+        run(ILinkClient(bot_token=bot).send_text("u", "hi", context_token=context))
+    hint = captured.value.hint()
+    assert "prepare failed" in hint and "ret=-2" in hint
+    assert bot not in hint and context not in hint
+
+
+
+def test_estimated_budget_footer_does_not_promise_quota_renewal():
+    chinese = "".join(plan_chunks("日报", 200, "zh", remaining=1))
+    english = "".join(plan_chunks("briefing", 200, "en", remaining=1))
+    assert "如后续收不到日报，请给机器人发条消息后重试。" in chinese
+    assert "补充" not in chinese and "额度" not in chinese
+    assert "message the bot and retry" in english
+    assert "renew" not in english and "budget" not in english
