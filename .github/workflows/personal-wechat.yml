@@ -65,9 +65,12 @@ jobs:
       - name: Upload public report HTML only
         uses: actions/upload-pages-artifact@v4
         with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: data/pages-site
       - name: Publish mobile detail pages
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Deliver short guide after checking the published page
         if: inputs.stage != 'generate' && inputs.stage != 'format' && github.event.schedule != '7 0 * * *'
         run: uv run python scripts/actions_run.py deliver --send-only
