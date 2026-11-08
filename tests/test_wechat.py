@@ -339,3 +339,15 @@ def test_estimated_budget_footer_does_not_promise_quota_renewal():
     assert "补充" not in chinese and "额度" not in chinese
     assert "message the bot and retry" in english
     assert "renew" not in english and "budget" not in english
+
+
+def test_delivery_result_keeps_structured_ret_without_parsing_hint(tmp_path, monkeypatch):
+    sender, fake = notifier(tmp_path, monkeypatch, session(), FakeClient(send_error=ILinkError("prepare failed", ret=-2)))
+    result = run(sender.send_text("briefing"))
+    assert result.ret == -2 and not result.sent and result.chunks_sent == 0
+    fake.send_error = ILinkError("ret=-2 appears only in description")
+    result = run(sender.send_text("briefing"))
+    assert result.ret is None and not result.sent
+    fake.send_error = None
+    result = run(sender.send_text("briefing"))
+    assert result.ret is None and result.sent
